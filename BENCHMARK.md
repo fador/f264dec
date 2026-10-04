@@ -68,15 +68,56 @@ src/strategies/
 ├── strategyselector.h / .cpp       # Dynamic CPUID detection and strategy dispatcher
 ├── strategies-transform.h / .cpp   # Transform & reconstruction strategy dispatch hub
 ├── strategies-mc.h / .cpp          # Motion compensation subpel dispatch hub
+├── strategies-deblock.h / .cpp     # In-loop deblocking filter dispatch hub
 ├── generic/                        # Generic portable C++20 reference algorithms
 │   ├── generic-transform.h / .cpp  # 4x4 IDCT, 8x8 IDCT, sample reconstruction
-│   └── generic-mc.h / .cpp         # Subpel luma 6-tap FIR interpolation
+│   ├── generic-mc.h / .cpp         # Subpel luma 6-tap FIR & chroma bilinear interpolation
+│   └── generic-deblock.h / .cpp    # Normal & boundary deblocking filters
 ├── sse2/                           # SSE2 SIMD implementations
 │   └── sse2-transform.h / .cpp     # 4x4 IDCT and sample reconstruction
 └── avx2/                           # AVX2 256-bit SIMD implementations
     ├── avx2-transform.h / .cpp     # 8x8 IDCT and 8x8 sample reconstruction
-    └── avx2-mc.h / .cpp            # 6-tap subpel FIR (half-pel & quarter-pel: 10, 20, 30, 01, 02, 03, 22)
+    ├── avx2-mc.h / .cpp            # Subpel FIR (10, 20, 30, 01, 02, 03, 22), bi-prediction & chroma MC
+    └── avx2-deblock.h / .cpp       # Vectorized 4-pel luma normal deblocking (horizontal & vertical)
 ```
 
 Each SIMD strategy includes automated fallback to generic routines for edge cases (e.g. non-8-bit depth or small sub-macroblock partition sizes), guaranteeing 100% bit-exact conformance across the entire JM test stream suite on both MSVC and GCC/Clang.
+
+---
+
+## Runtime SIMD Control (`--cpuid`)
+
+f264dec supports runtime control over CPU optimization dispatch via the `--cpuid <0|1>` flag:
+- `--cpuid 0`: Disables all SIMD acceleration (forces pure generic C++ routines across all transforms, motion compensation, and deblocking). CPU core detection and multithreading remain fully operational.
+- `--cpuid 1`: Enables dynamic hardware feature detection and selects optimal vector routines (AVX2, SSE4.1, SSSE3, SSE2).
+
+### Comparative Benchmark: Generic C++ (`--cpuid 0`) vs. Optimized SIMD (`--cpuid 1`)
+
+Measurements taken on AMD Ryzen 9 3900X (MSVC Release build, 3-run minimum):
+
+| Bitstream | Profile / Resolution | Threads | Generic (`--cpuid 0`) | SIMD (`--cpuid 1`) | Speedup |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `x264_1080p_bench.264` | 1080p 60fps High | 1T | 2.499 s (24.0 FPS) | **2.313 s (25.9 FPS)** | **+8.0%** |
+| `x264_1080p_bench.264` | 1080p 60fps High | Multi-T | 2.497 s (24.0 FPS) | **2.355 s (25.5 FPS)** | **+6.0%** |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 1T | 0.537 s (55.9 FPS) | **0.502 s (59.7 FPS)** | **+7.0%** |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | Multi-T | 0.266 s (112.9 FPS) | **0.258 s (115.9 FPS)** | **+2.7%** |
+| `x264_720p_high_cavlc.264` | 720p CAVLC High | 1T | 0.328 s (91.4 FPS) | **0.314 s (95.6 FPS)** | **+4.6%** |
+| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | Multi-T | 0.035 s (285.4 FPS) | **0.034 s (291.3 FPS)** | **+2.1%** |
+
+---
+
+## Step-by-Step Optimization Milestones
+
+1. **Commit `512b944` - `--cpuid` flag**:
+   - Added runtime `--cpuid <0|1>` argument in CLI, `InputParameters`, and `strategyselector` to allow rigorous generic vs SIMD performance comparison.
+2. **Commit `ddb2fbe` - AVX2 Bi-Prediction**:
+   - Vectorized `bi_prediction` sample averaging using `_mm256_avg_epu8` (2x16 pixel rows simultaneously) and `_mm_avg_epu8` for 8xN and 4xN blocks.
+3. **Commit `cce9492` - AVX2 Chroma Subpel Bilinear Interpolation**:
+   - Implemented `get_chroma_0X_avx2`, `get_chroma_X0_avx2`, and `get_chroma_XY_avx2` using `_mm256_maddubs_epi16` and `_mm256_packus_epi16`.
+   - Dual-row AVX2 processing evaluates 16 subpel chroma samples per instruction vector.
+4. **Commit `7f5b547` - Vectorized Deblocking Filter**:
+   - Created `strategies-deblock` module with generic and AVX2/SSE strategy implementations.
+   - Vectorized 4-pixel luma normal deblocking (`luma_hor_deblock_normal_avx2` and `luma_ver_deblock_normal_avx2`) with branchless threshold masking and delta clipping.
+   - Added 32-bit zero-strength early-exit checks across all 4 MB boundary loops (`edge_loop_luma_ver`, `edge_loop_luma_hor`, `edge_loop_chroma_ver`, `edge_loop_chroma_hor`).
+
 
