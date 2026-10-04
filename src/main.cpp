@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include "h264decoder.h"
+#include "profiling.h"
 #include "win32.h"
 
 static void print_usage(const char *prog)
@@ -140,6 +141,8 @@ int main(int argc, char **argv)
         std::cout << "\nDecoded " << frames_decoded << " frames in "
                   << elapsed_sec << " s (" << fps << " fps)\n";
     }
+
+    f264_profile_report();
 
     return 0;
 }

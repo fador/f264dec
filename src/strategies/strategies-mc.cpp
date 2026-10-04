@@ -17,8 +17,20 @@ f264_luma_shift_func f264_get_luma_02 = nullptr;
 f264_luma_shift_func f264_get_luma_01 = nullptr;
 f264_luma_shift_func f264_get_luma_03 = nullptr;
 
+f264_luma_shift_func f264_get_luma_11 = nullptr;
+f264_luma_shift_func f264_get_luma_13 = nullptr;
+f264_luma_shift_func f264_get_luma_31 = nullptr;
+f264_luma_shift_func f264_get_luma_33 = nullptr;
+
 f264_luma_22_func f264_get_luma_22 = nullptr;
+f264_luma_22_func f264_get_luma_21 = nullptr;
+f264_luma_22_func f264_get_luma_23 = nullptr;
+
+f264_luma_shift_tmp_func f264_get_luma_12 = nullptr;
+f264_luma_shift_tmp_func f264_get_luma_32 = nullptr;
+
 f264_bi_pred_func f264_bi_prediction = nullptr;
+f264_weighted_bi_pred_func f264_weighted_bi_prediction = nullptr;
 f264_chroma_0X_func f264_get_chroma_0X = nullptr;
 f264_chroma_X0_func f264_get_chroma_X0 = nullptr;
 f264_chroma_XY_func f264_get_chroma_XY = nullptr;

@@ -25,6 +25,7 @@
 #include "mb_access.h"
 #include "loopfilter.h"
 #include "loop_filter.h"
+#include "profiling.h"
 
 static void DeblockMb      (VideoParameters *p_Vid, StorablePicture *p, int MbQAddr);
 static void perform_db     (VideoParameters *p_Vid, StorablePicture *p, int MbQAddr);
@@ -44,6 +45,7 @@ extern void get_strength_hor_MBAff     (byte *Strength, Macroblock *MbQ, int edg
  */
 void DeblockPicture(VideoParameters *p_Vid, StorablePicture *p)
 {
+  ScopedTimer timer(g_profile_stats.deblock_ns);
   unsigned i;
   if (p->mb_aff_frame_flag)
   {
@@ -56,13 +58,19 @@ void DeblockPicture(VideoParameters *p_Vid, StorablePicture *p)
   {
    // deblock_normal( p_Vid, p);
     
-    for (i = 0; i < p->PicSizeInMbs; ++i)
     {
-      get_db_strength( p_Vid, p, i ) ;
+      ScopedTimer timer_str(g_profile_stats.db_strength_ns);
+      for (i = 0; i < p->PicSizeInMbs; ++i)
+      {
+        get_db_strength( p_Vid, p, i ) ;
+      }
     }
-    for (i = 0; i < p->PicSizeInMbs; ++i)
     {
-      perform_db( p_Vid, p, i ) ;
+      ScopedTimer timer_flt(g_profile_stats.db_filter_ns);
+      for (i = 0; i < p->PicSizeInMbs; ++i)
+      {
+        perform_db( p_Vid, p, i ) ;
+      }
     }
     
   }

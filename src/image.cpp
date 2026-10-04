@@ -33,6 +33,7 @@
 #include <vector>
 #include "threading/threadqueue.h"
 #include "threading/frame_pipeline.h"
+#include "profiling.h"
 
 #include "global.h"
 #include "image.h"
@@ -1762,6 +1763,7 @@ void pad_buf(imgpel *pImgBuf, int iWidth, int iHeight, int iStride, int iPadX, i
 
 void pad_dec_picture(VideoParameters *p_Vid, StorablePicture *dec_picture)
 {
+  ScopedTimer timer(g_profile_stats.pad_ns);
   int iPadX = p_Vid->iLumaPadX;
   int iPadY = p_Vid->iLumaPadY;
   int iWidth = dec_picture->size_x;
@@ -2401,8 +2403,14 @@ void decode_one_slice(Slice *currSlice)
     // Initializes the current macroblock
     start_macroblock(currSlice, &currMB);
     // Get the syntax elements from the NAL
-    currSlice->read_one_macroblock(currMB);
-    decode_one_macroblock(currMB, currSlice->dec_picture);
+    {
+      ScopedTimer timer(g_profile_stats.cabac_ns);
+      currSlice->read_one_macroblock(currMB);
+    }
+    {
+      ScopedTimer timer(g_profile_stats.decode_mb_ns);
+      decode_one_macroblock(currMB, currSlice->dec_picture);
+    }
 
     if(currSlice->mb_aff_frame_flag && currMB->mb_field)
     {
