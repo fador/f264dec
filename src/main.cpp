@@ -5,13 +5,13 @@
 #include <cstring>
 #include <cstdlib>
 
-#include "h264decoder.h"
+#include "f264dec.h"
 #include "profiling.h"
 #include "win32.h"
 
 static void print_usage(const char *prog)
 {
-    std::cout << "f264dec - Fast Standalone H.264/AVC Decoder\n"
+    std::cout << "f264dec - Fast Standalone H.264/AVC Decoder (v" << f264_get_version_string() << ")\n"
               << "Usage: " << prog << " [options] <input.264> [output.yuv]\n\n"
               << "Options:\n"
               << "  -i, --input <file>    Input H.264 Annex B bitstream file\n"
@@ -77,51 +77,57 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    InputParameters inp{};
-    std::strncpy(inp.infile, infile.c_str(), sizeof(inp.infile) - 1);
+    const f264_api *api = f264_api_get(8);
+    f264_config *cfg = api->config_alloc();
+    if (!cfg) {
+        std::cerr << "Error: Failed to allocate decoder configuration.\n";
+        return 1;
+    }
+
+    std::strncpy(cfg->infile, infile.c_str(), sizeof(cfg->infile) - 1);
     if (!outfile.empty()) {
-        std::strncpy(inp.outfile, outfile.c_str(), sizeof(inp.outfile) - 1);
+        std::strncpy(cfg->outfile, outfile.c_str(), sizeof(cfg->outfile) - 1);
     }
     if (!reffile.empty()) {
-        std::strncpy(inp.reffile, reffile.c_str(), sizeof(inp.reffile) - 1);
+        std::strncpy(cfg->reffile, reffile.c_str(), sizeof(cfg->reffile) - 1);
     }
-    inp.FileFormat = PAR_OF_ANNEXB;
-    inp.iDecFrmNum = max_frames;
-    inp.silent = silent ? 1 : 0;
-    inp.threads = threads;
-    inp.cpuid = cpuid;
+    cfg->max_frames = max_frames;
+    cfg->silent = silent ? 1 : 0;
+    cfg->threads = threads;
+    cfg->cpuid = cpuid;
 
     init_time();
 
     if (!silent) {
-        std::cout << "f264dec H.264/AVC Decoder\n"
-                  << "Input bitstream: " << inp.infile << "\n";
+        std::cout << "f264dec H.264/AVC Decoder (v" << f264_get_version_string() << ")\n"
+                  << "Input bitstream: " << cfg->infile << "\n";
         if (!outfile.empty()) {
-            std::cout << "Output YUV:      " << inp.outfile << "\n";
+            std::cout << "Output YUV:      " << cfg->outfile << "\n";
         }
         if (!reffile.empty()) {
-            std::cout << "Reference YUV:   " << inp.reffile << "\n";
+            std::cout << "Reference YUV:   " << cfg->reffile << "\n";
         }
     }
 
-    int ret = OpenDecoder(&inp);
-    if (ret != DEC_OPEN_NOERR) {
-        std::cerr << "Error opening decoder (code 0x" << std::hex << ret << ")\n";
+    f264_decoder *dec = api->decoder_open(cfg);
+    if (!dec) {
+        std::cerr << "Error opening f264dec decoder\n";
+        api->config_destroy(cfg);
         return 1;
     }
 
     int frames_decoded = 0;
-    DecodedPicList *pic_list = nullptr;
+    f264_picture *pic = nullptr;
 
     auto t_start = std::chrono::steady_clock::now();
 
     while (true) {
-        ret = DecodeOneFrame(&pic_list);
-        if (ret == DEC_EOS) {
+        int ret = api->decoder_decode(dec, &pic);
+        if (ret == F264_EOS) {
             break;
         }
-        if (ret != DEC_SUCCEED) {
-            std::cerr << "Decoding error at frame " << frames_decoded << " (code 0x" << std::hex << ret << ")\n";
+        if (ret != F264_OK) {
+            std::cerr << "Decoding error at frame " << frames_decoded << " (code " << ret << ")\n";
             break;
         }
         frames_decoded++;
@@ -130,8 +136,9 @@ int main(int argc, char **argv)
         }
     }
 
-    FinitDecoder(&pic_list);
-    CloseDecoder();
+    api->decoder_flush(dec, &pic);
+    api->decoder_close(dec);
+    api->config_destroy(cfg);
 
     auto t_end = std::chrono::steady_clock::now();
     double elapsed_sec = std::chrono::duration<double>(t_end - t_start).count();

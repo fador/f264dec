@@ -989,6 +989,7 @@ typedef struct decoder_params
   int                bitcounter;
   struct threadqueue_queue_t *thread_queue;
   void *frame_pipeline;
+  void *pic_wrapper;
 } DecoderParams;
 
 extern DecoderParams  *p_Dec;

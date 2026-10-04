@@ -1,20 +1,8 @@
-
-/*!
- ************************************************************************
- *  \file
- *     h264decoder.h
- *  \brief
- *     interface for H.264 decoder.
- *  \author
- *     Copyright (C) 2009 Dolby
- *  Yuwen He (yhe@dolby.com)
- *  
- ************************************************************************
- */
 #ifndef _H264DECODER_H_
 #define _H264DECODER_H_
 
 #include "global.h"
+#include "f264dec.h"
 
 typedef enum
 {
@@ -22,12 +10,11 @@ typedef enum
   DEC_OPEN_NOERR = 0,
   DEC_CLOSE_NOERR = 0,  
   DEC_SUCCEED = 0,
-  DEC_EOS =1,
+  DEC_EOS = 1,
   DEC_NEED_DATA = 2,
   DEC_INVALID_PARAM = 3,
   DEC_ERRMASK = 0x8000
-//  DEC_ERRMASK = 0x80000000
-}DecErrCode;
+} DecErrCode;
 
 typedef struct dec_set_t
 {
@@ -51,4 +38,5 @@ int SetOptsDecoder(DecSet_t *pDecOpts);
 #ifdef __cplusplus
 }
 #endif
-#endif
+
+#endif // _H264DECODER_H_

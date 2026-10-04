@@ -122,6 +122,41 @@ python tests/benchmark.py --decoder build/Release/f264dec.exe --streams-dir test
 
 ---
 
+## C API (Kvazaar-Style)
+
+`f264dec` exposes a normalized C interface modelled after the [Kvazaar](https://github.com/ultravideo/kvazaar) API via `src/f264dec.h`:
+
+```c
+#include "f264dec.h"
+
+// 1. Retrieve the API table
+const f264_api *api = f264_api_get(8);
+
+// 2. Allocate and initialize configuration
+f264_config *cfg = api->config_alloc();
+api->config_init(cfg);
+api->config_parse(cfg, "threads", "0");   // auto-detect threads
+api->config_parse(cfg, "input", "input.264");
+
+// 3. Open decoder instance
+f264_decoder *dec = api->decoder_open(cfg);
+
+// 4. Decode frame-by-frame
+f264_picture *pic = NULL;
+while (api->decoder_decode(dec, &pic) == F264_OK) {
+    if (pic) {
+        // Access pic->y, pic->u, pic->v, pic->width, pic->height, pic->stride
+    }
+}
+
+// 5. Flush and clean up
+api->decoder_flush(dec, &pic);
+api->decoder_close(dec);
+api->config_destroy(cfg);
+```
+
+---
+
 ## Project Structure
 
 ```text
@@ -133,7 +168,9 @@ f264dec/
 │   ├── benchmark.py            # Automated performance benchmarking harness
 │   └── streams/                # Test bitstreams (Baseline, Main, High, 4:2:2, 4:4:4, etc.)
 └── src/
-    ├── ldecod.cpp              # Entry point and command-line parser
+    ├── f264dec.h               # Public Kvazaar-normalized C API header
+    ├── f264dec.cpp             # Decoder core interface and entry point implementations
+    ├── main.cpp                # Standalone CLI decoder frontend
     ├── image.cpp               # Picture decoding, slice dispatch, and frame pipelining
     ├── mc_prediction.cpp       # Motion compensation coordination and reference wait sync
     ├── loopFilter.cpp          # In-loop deblocking filter and progressive row-deblocking

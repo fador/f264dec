@@ -1281,6 +1281,11 @@ int CloseDecoder()
   }
 #endif
 
+  if (pDecoder->pic_wrapper) {
+    free(pDecoder->pic_wrapper);
+    pDecoder->pic_wrapper = NULL;
+  }
+
   free_img (pDecoder->p_Vid);
   free (pDecoder->p_Inp);
   free(pDecoder);
@@ -1342,3 +1347,267 @@ void set_global_coding_par(VideoParameters *p_Vid, CodingParameters *cps)
 
     init_frext(p_Vid);
 }
+
+/*****************************************************************************
+ * Kvazaar-Normalized f264dec API Implementation
+ *****************************************************************************/
+
+f264_config * f264_config_alloc(void)
+{
+  f264_config *cfg = (f264_config *)calloc(1, sizeof(f264_config));
+  if (cfg) {
+    f264_config_init(cfg);
+  }
+  return cfg;
+}
+
+void f264_config_destroy(f264_config *cfg)
+{
+  if (cfg) {
+    free(cfg);
+  }
+}
+
+int f264_config_init(f264_config *cfg)
+{
+  if (!cfg) return 0;
+  memset(cfg, 0, sizeof(f264_config));
+  cfg->threads = 0;          // Auto-detect
+  cfg->cpuid = 1;            // SIMD enabled
+  cfg->max_frames = 0;       // Decode all
+  cfg->silent = 0;           // Verbose
+  cfg->deblock_enable = 1;
+  cfg->file_format = 0;      // PAR_OF_ANNEXB
+  return 1;
+}
+
+int f264_config_parse(f264_config *cfg, const char *name, const char *value)
+{
+  if (!cfg || !name || !value) return 0;
+  if (strcmp(name, "threads") == 0) {
+    cfg->threads = atoi(value);
+    return 1;
+  }
+  if (strcmp(name, "cpuid") == 0) {
+    cfg->cpuid = atoi(value);
+    return 1;
+  }
+  if (strcmp(name, "frames") == 0 || strcmp(name, "max_frames") == 0) {
+    cfg->max_frames = atoi(value);
+    return 1;
+  }
+  if (strcmp(name, "silent") == 0) {
+    cfg->silent = atoi(value);
+    return 1;
+  }
+  if (strcmp(name, "input") == 0 || strcmp(name, "infile") == 0) {
+    strncpy(cfg->infile, value, sizeof(cfg->infile) - 1);
+    return 1;
+  }
+  if (strcmp(name, "output") == 0 || strcmp(name, "outfile") == 0) {
+    strncpy(cfg->outfile, value, sizeof(cfg->outfile) - 1);
+    return 1;
+  }
+  if (strcmp(name, "ref") == 0 || strcmp(name, "reffile") == 0) {
+    strncpy(cfg->reffile, value, sizeof(cfg->reffile) - 1);
+    return 1;
+  }
+  return 0;
+}
+
+f264_picture * f264_picture_alloc(int32_t width, int32_t height)
+{
+  return f264_picture_alloc_csp(F264_CSP_420, width, height);
+}
+
+f264_picture * f264_picture_alloc_csp(f264_chroma_format csp, int32_t width, int32_t height)
+{
+  f264_picture *pic = (f264_picture *)calloc(1, sizeof(f264_picture));
+  if (!pic) return NULL;
+
+  pic->width = width;
+  pic->height = height;
+  pic->stride = width;
+  pic->chroma_format = csp;
+  pic->bit_depth = 8;
+
+  int w_c = (csp == F264_CSP_420 || csp == F264_CSP_422) ? (width >> 1) : (csp == F264_CSP_400 ? 0 : width);
+  int h_c = (csp == F264_CSP_420) ? (height >> 1) : (csp == F264_CSP_400 ? 0 : height);
+  pic->width_c = w_c;
+  pic->height_c = h_c;
+  pic->stride_c = w_c;
+
+  size_t y_size = (size_t)width * height;
+  size_t c_size = (size_t)w_c * h_c;
+  size_t total = y_size + 2 * c_size;
+
+  pic->fulldata_buf = (f264_pixel *)malloc(total);
+  if (!pic->fulldata_buf) {
+    free(pic);
+    return NULL;
+  }
+  pic->fulldata = pic->fulldata_buf;
+  pic->y = pic->fulldata;
+  pic->u = (c_size > 0) ? pic->y + y_size : NULL;
+  pic->v = (c_size > 0) ? pic->u + c_size : NULL;
+  pic->data[0] = pic->y;
+  pic->data[1] = pic->u;
+  pic->data[2] = pic->v;
+
+  return pic;
+}
+
+void f264_picture_free(f264_picture *pic)
+{
+  if (pic) {
+    if (pic->fulldata_buf) {
+      free(pic->fulldata_buf);
+    }
+    free(pic);
+  }
+}
+
+static void fill_f264_picture_from_dec_pic(f264_picture *out, DecodedPicList *dec_pic)
+{
+  if (!out || !dec_pic) return;
+  out->y = (f264_pixel*)dec_pic->pY;
+  out->u = (f264_pixel*)dec_pic->pU;
+  out->v = (f264_pixel*)dec_pic->pV;
+  out->data[0] = out->y;
+  out->data[1] = out->u;
+  out->data[2] = out->v;
+  out->width = dec_pic->iWidth;
+  out->height = dec_pic->iHeight;
+  out->stride = dec_pic->iYBufStride;
+  out->bit_depth = dec_pic->iBitDepth;
+  out->poc = dec_pic->iPOC;
+  out->chroma_format = (f264_chroma_format)dec_pic->iYUVFormat;
+
+  if (dec_pic->iYUVFormat == 1) { // 4:2:0
+    out->width_c = dec_pic->iWidth >> 1;
+    out->height_c = dec_pic->iHeight >> 1;
+    out->stride_c = dec_pic->iUVBufStride;
+  } else if (dec_pic->iYUVFormat == 2) { // 4:2:2
+    out->width_c = dec_pic->iWidth >> 1;
+    out->height_c = dec_pic->iHeight;
+    out->stride_c = dec_pic->iUVBufStride;
+  } else if (dec_pic->iYUVFormat == 3) { // 4:4:4
+    out->width_c = dec_pic->iWidth;
+    out->height_c = dec_pic->iHeight;
+    out->stride_c = dec_pic->iUVBufStride;
+  } else { // 4:0:0
+    out->width_c = 0;
+    out->height_c = 0;
+    out->stride_c = 0;
+  }
+}
+
+f264_decoder * f264_decoder_open(const f264_config *cfg)
+{
+  if (!cfg) return NULL;
+  InputParameters inp;
+  memset(&inp, 0, sizeof(inp));
+  strncpy(inp.infile, cfg->infile, sizeof(inp.infile) - 1);
+  strncpy(inp.outfile, cfg->outfile, sizeof(inp.outfile) - 1);
+  strncpy(inp.reffile, cfg->reffile, sizeof(inp.reffile) - 1);
+  inp.threads = cfg->threads;
+  inp.iDecFrmNum = cfg->max_frames;
+  inp.cpuid = cfg->cpuid;
+  inp.silent = cfg->silent;
+  inp.FileFormat = PAR_OF_ANNEXB;
+
+  int ret = OpenDecoder(&inp);
+  if (ret != DEC_OPEN_NOERR || !p_Dec) {
+    return NULL;
+  }
+
+  if (!p_Dec->pic_wrapper) {
+    p_Dec->pic_wrapper = calloc(1, sizeof(f264_picture));
+  }
+  return (f264_decoder *)p_Dec;
+}
+
+void f264_decoder_close(f264_decoder *dec)
+{
+  (void)dec;
+  CloseDecoder();
+}
+
+int f264_decoder_decode(f264_decoder *dec, f264_picture **pic_out)
+{
+  if (!dec) return F264_ERR;
+  DecodedPicList *pic_list = NULL;
+  int ret = DecodeOneFrame(&pic_list);
+
+  if (pic_out) {
+    *pic_out = NULL;
+    DecoderParams *pDecoder = (DecoderParams *)dec;
+    if (pDecoder && pDecoder->p_Vid && pDecoder->p_Vid->pDecOuputPic && pDecoder->p_Vid->pDecOuputPic->bValid) {
+      f264_picture *wrap = (f264_picture *)pDecoder->pic_wrapper;
+      if (wrap) {
+        fill_f264_picture_from_dec_pic(wrap, pDecoder->p_Vid->pDecOuputPic);
+        *pic_out = wrap;
+      }
+    }
+  }
+
+  if (ret == DEC_SUCCEED) return F264_OK;
+  if (ret == DEC_EOS) return F264_EOS;
+  return F264_ERR;
+}
+
+int f264_decoder_flush(f264_decoder *dec, f264_picture **pic_out)
+{
+  if (!dec) return F264_ERR;
+  DecodedPicList *pic_list = NULL;
+  int ret = FinitDecoder(&pic_list);
+
+  if (pic_out) {
+    *pic_out = NULL;
+    DecoderParams *pDecoder = (DecoderParams *)dec;
+    if (pDecoder && pDecoder->p_Vid && pDecoder->p_Vid->pDecOuputPic && pDecoder->p_Vid->pDecOuputPic->bValid) {
+      f264_picture *wrap = (f264_picture *)pDecoder->pic_wrapper;
+      if (wrap) {
+        fill_f264_picture_from_dec_pic(wrap, pDecoder->p_Vid->pDecOuputPic);
+        *pic_out = wrap;
+      }
+    }
+  }
+
+  return (ret == DEC_GEN_NOERR) ? F264_OK : F264_ERR;
+}
+
+static const f264_api g_f264_api = {
+  f264_config_alloc,
+  f264_config_destroy,
+  f264_config_init,
+  f264_config_parse,
+  f264_decoder_open,
+  f264_decoder_close,
+  f264_decoder_decode,
+  f264_decoder_flush,
+  f264_picture_alloc,
+  f264_picture_alloc_csp,
+  f264_picture_free
+};
+
+const f264_api * f264_api_get(int bit_depth)
+{
+  (void)bit_depth;
+  return &g_f264_api;
+}
+
+const f264_api * f264dec_api_get(int bit_depth)
+{
+  return f264_api_get(bit_depth);
+}
+
+const char * f264_get_version_string(void)
+{
+  return "1.0.0";
+}
+
+int f264_get_version_major(void) { return F264_VERSION_MAJOR; }
+int f264_get_version_minor(void) { return F264_VERSION_MINOR; }
+int f264_get_version_revision(void) { return F264_VERSION_REV; }
+
