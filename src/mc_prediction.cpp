@@ -21,6 +21,7 @@
 #include "mb_access.h"
 #include "macroblock.h"
 #include "memalloc.h"
+#include "strategies/strategies-mc.h"
 
 int allocate_pred_mem(Slice *currSlice)
 {
@@ -192,6 +193,10 @@ static void get_block_00(imgpel *block, imgpel *cur_img, int span, int block_siz
  */ 
 static void get_luma_10(imgpel **block, imgpel **cur_imgY, int block_size_y, int block_size_x, int x_pos , int max_imgpel_value)
 {
+  if (f264_get_luma_10) {
+    f264_get_luma_10(block, cur_imgY, block_size_y, block_size_x, x_pos, max_imgpel_value);
+    return;
+  }
   imgpel *p0, *p1, *p2, *p3, *p4, *p5;
   imgpel *orig_line, *cur_line;
   int i, j;
@@ -227,6 +232,10 @@ static void get_luma_10(imgpel **block, imgpel **cur_imgY, int block_size_y, int
  */ 
 static void get_luma_20(imgpel **block, imgpel **cur_imgY, int block_size_y, int block_size_x, int x_pos , int max_imgpel_value)
 {
+  if (f264_get_luma_20) {
+    f264_get_luma_20(block, cur_imgY, block_size_y, block_size_x, x_pos, max_imgpel_value);
+    return;
+  }
   imgpel *p0, *p1, *p2, *p3, *p4, *p5;
   imgpel *orig_line;
   int i, j;
@@ -258,6 +267,10 @@ static void get_luma_20(imgpel **block, imgpel **cur_imgY, int block_size_y, int
  */ 
 static void get_luma_30(imgpel **block, imgpel **cur_imgY, int block_size_y, int block_size_x, int x_pos , int max_imgpel_value)
 {
+  if (f264_get_luma_30) {
+    f264_get_luma_30(block, cur_imgY, block_size_y, block_size_x, x_pos, max_imgpel_value);
+    return;
+  }
   imgpel *p0, *p1, *p2, *p3, *p4, *p5;
   imgpel *orig_line, *cur_line;
   int i, j;
@@ -293,6 +306,10 @@ static void get_luma_30(imgpel **block, imgpel **cur_imgY, int block_size_y, int
  */ 
 static void get_luma_01(imgpel **block, imgpel **cur_imgY, int block_size_y, int block_size_x, int x_pos, int shift_x, int max_imgpel_value)
 {
+  if (f264_get_luma_01) {
+    f264_get_luma_01(block, cur_imgY, block_size_y, block_size_x, x_pos, shift_x, max_imgpel_value);
+    return;
+  }
   imgpel *p0, *p1, *p2, *p3, *p4, *p5;
   imgpel *orig_line, *cur_line;
   int i, j;
@@ -330,6 +347,10 @@ static void get_luma_01(imgpel **block, imgpel **cur_imgY, int block_size_y, int
  */ 
 static void get_luma_02(imgpel **block, imgpel **cur_imgY, int block_size_y, int block_size_x, int x_pos, int shift_x, int max_imgpel_value)
 {
+  if (f264_get_luma_02) {
+    f264_get_luma_02(block, cur_imgY, block_size_y, block_size_x, x_pos, shift_x, max_imgpel_value);
+    return;
+  }
   imgpel *p0, *p1, *p2, *p3, *p4, *p5;
   imgpel *orig_line;
   int i, j;
@@ -363,6 +384,10 @@ static void get_luma_02(imgpel **block, imgpel **cur_imgY, int block_size_y, int
  */ 
 static void get_luma_03(imgpel **block, imgpel **cur_imgY, int block_size_y, int block_size_x, int x_pos, int shift_x, int max_imgpel_value)
 {
+  if (f264_get_luma_03) {
+    f264_get_luma_03(block, cur_imgY, block_size_y, block_size_x, x_pos, shift_x, max_imgpel_value);
+    return;
+  }
   imgpel *p0, *p1, *p2, *p3, *p4, *p5;
   imgpel *orig_line, *cur_line;
   int i, j;
@@ -457,6 +482,10 @@ static void get_luma_21(imgpel **block, imgpel **cur_imgY, int **tmp_res, int bl
  */ 
 static void get_luma_22(imgpel **block, imgpel **cur_imgY, int **tmp_res, int block_size_y, int block_size_x, int x_pos, int max_imgpel_value)
 {
+  if (f264_get_luma_22) {
+    f264_get_luma_22(block, cur_imgY, tmp_res, block_size_y, block_size_x, x_pos, max_imgpel_value);
+    return;
+  }
   int i, j;
   /* Vertical & horizontal interpolation */
   int *tmp_line;

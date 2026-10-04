@@ -24,9 +24,14 @@
 #include "transform8x8.h"
 #include "transform.h"
 #include "quant.h"
+#include "strategies/strategies-transform.h"
 
 static void recon8x8(int **m7, imgpel **mb_rec, imgpel **mpr, int max_imgpel_value, int ioff)
 {
+  if (f264_recon8x8) {
+    f264_recon8x8(m7, mb_rec, mpr, max_imgpel_value, ioff);
+    return;
+  }
   int j;
   int    *m_tr  = NULL;
   imgpel *m_rec = NULL;

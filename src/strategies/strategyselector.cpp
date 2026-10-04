@@ -5,6 +5,7 @@
 
 #include "strategies/strategyselector.h"
 #include "strategies/strategies-transform.h"
+#include "strategies/strategies-mc.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,7 @@ f264_hardware_flags_t f264_g_strategies_available;
 
 static const f264_strategy_to_select_t strategies_to_select[] = {
   STRATEGIES_TRANSFORM_EXPORTS
+  STRATEGIES_MC_EXPORTS
   { nullptr, nullptr }
 };
 
@@ -195,6 +197,12 @@ int f264_strategyselector_init(int32_t cpuid, uint8_t bitdepth, uint8_t logging)
   // Register transform strategies
   if (!f264_strategy_register_transform(&strategies, bitdepth)) {
     std::fprintf(stderr, "f264_strategy_register_transform failed!\n");
+    return 0;
+  }
+
+  // Register MC strategies
+  if (!f264_strategy_register_mc(&strategies, bitdepth)) {
+    std::fprintf(stderr, "f264_strategy_register_mc failed!\n");
     return 0;
   }
 

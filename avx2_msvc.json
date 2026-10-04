@@ -1,0 +1,128 @@
+[
+  {
+    "stream": "x264_1080p_bench.264",
+    "desc": "1080p 60fps High Profile",
+    "frames": 60,
+    "threads": "1T",
+    "best_time_s": 2.376785000000382,
+    "mean_time_s": 2.386394966665345,
+    "fps": 25.244184896820858
+  },
+  {
+    "stream": "x264_1080p_bench.264",
+    "desc": "1080p 60fps High Profile",
+    "frames": 60,
+    "threads": "Multi-T",
+    "best_time_s": 2.36381930000789,
+    "mean_time_s": 2.4057201000056616,
+    "fps": 25.382650864979286
+  },
+  {
+    "stream": "x264_720p_main_slices.264",
+    "desc": "720p Multi-slice Main Profile",
+    "frames": 30,
+    "threads": "1T",
+    "best_time_s": 0.5034702999982983,
+    "mean_time_s": 0.5072858333296608,
+    "fps": 59.58643439365023
+  },
+  {
+    "stream": "x264_720p_main_slices.264",
+    "desc": "720p Multi-slice Main Profile",
+    "frames": 30,
+    "threads": "Multi-T",
+    "best_time_s": 0.2520866999984719,
+    "mean_time_s": 0.25562219999847,
+    "fps": 119.00667508512689
+  },
+  {
+    "stream": "x264_720p_high10.264",
+    "desc": "720p 10-bit High10 Profile",
+    "frames": 30,
+    "threads": "1T",
+    "best_time_s": 0.3036333000054583,
+    "mean_time_s": 0.3220159666719458,
+    "fps": 98.80339211628205
+  },
+  {
+    "stream": "x264_720p_high10.264",
+    "desc": "720p 10-bit High10 Profile",
+    "frames": 30,
+    "threads": "Multi-T",
+    "best_time_s": 0.3002105999912601,
+    "mean_time_s": 0.3044524333284547,
+    "fps": 99.92984924873865
+  },
+  {
+    "stream": "x264_720p_high_cavlc.264",
+    "desc": "720p CAVLC High Profile",
+    "frames": 30,
+    "threads": "1T",
+    "best_time_s": 0.30659979999472853,
+    "mean_time_s": 0.30986033332980395,
+    "fps": 97.84742195042463
+  },
+  {
+    "stream": "x264_720p_high_cavlc.264",
+    "desc": "720p CAVLC High Profile",
+    "frames": 30,
+    "threads": "Multi-T",
+    "best_time_s": 0.21179220000340138,
+    "mean_time_s": 0.21250413333473261,
+    "fps": 141.64827599655794
+  },
+  {
+    "stream": "x264_720p_high_tff.264",
+    "desc": "720p Interlaced Field/TFF",
+    "frames": 30,
+    "threads": "1T",
+    "best_time_s": 0.5261106999969343,
+    "mean_time_s": 0.5399200333340559,
+    "fps": 57.022219848740605
+  },
+  {
+    "stream": "x264_720p_high_tff.264",
+    "desc": "720p Interlaced Field/TFF",
+    "frames": 30,
+    "threads": "Multi-T",
+    "best_time_s": 0.5248575000005076,
+    "mean_time_s": 0.5419126666626349,
+    "fps": 57.158371557939034
+  },
+  {
+    "stream": "high444_lossless.264",
+    "desc": "CIF 4:4:4 Lossless High Profile",
+    "frames": 10,
+    "threads": "1T",
+    "best_time_s": 0.11635060000116937,
+    "mean_time_s": 0.11954129999988557,
+    "fps": 85.94712876340557
+  },
+  {
+    "stream": "high444_lossless.264",
+    "desc": "CIF 4:4:4 Lossless High Profile",
+    "frames": 10,
+    "threads": "Multi-T",
+    "best_time_s": 0.11880090000340715,
+    "mean_time_s": 0.11960243333305698,
+    "fps": 84.17444648746941
+  },
+  {
+    "stream": "base_cavlc_slices.264",
+    "desc": "QCIF Multi-slice Baseline Profile",
+    "frames": 10,
+    "threads": "1T",
+    "best_time_s": 0.03934519999893382,
+    "mean_time_s": 0.04220169999947151,
+    "fps": 254.16060917903533
+  },
+  {
+    "stream": "base_cavlc_slices.264",
+    "desc": "QCIF Multi-slice Baseline Profile",
+    "frames": 10,
+    "threads": "Multi-T",
+    "best_time_s": 0.0310858000011649,
+    "mean_time_s": 0.03180573333520442,
+    "fps": 321.6902894448675
+  }
+]

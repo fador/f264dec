@@ -455,6 +455,10 @@ void forward8x8(int **block, int **tblock, int pos_y, int pos_x)
 
 void inverse8x8(int **tblock, int **block, int pos_x)
 {
+  if (f264_inverse8x8) {
+    f264_inverse8x8(tblock, block, pos_x);
+    return;
+  }
   int i, ii;
   int tmp[64];
   int *pTmp = tmp, *pblock;
