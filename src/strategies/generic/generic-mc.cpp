@@ -198,6 +198,65 @@ void bi_prediction_generic(imgpel **mb_pred, imgpel **block_l0, imgpel **block_l
   }
 }
 
+void get_chroma_0X_generic(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w01, int total_scale)
+{
+  imgpel *cur_row = cur_img;
+  imgpel *nxt_row = cur_img + span;
+  for (int j = 0; j < block_size_y; j++)
+  {
+    imgpel *cur_line    = cur_row;
+    imgpel *cur_line_p1 = nxt_row;
+    imgpel *blk_line    = block;
+    block += MB_BLOCK_SIZE;
+    cur_row = nxt_row;
+    nxt_row += span;
+    for (int i = 0; i < block_size_x; i++)
+    {
+      int result = (w00 * *cur_line++ + w01 * *cur_line_p1++);
+      *(blk_line++) = (imgpel) rshift_rnd_sf(result, total_scale);
+    }
+  }
+}
+
+void get_chroma_X0_generic(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w10, int total_scale)
+{
+  imgpel *cur_row = cur_img;
+  for (int j = 0; j < block_size_y; j++)
+  {
+    imgpel *cur_line    = cur_row;
+    imgpel *cur_line_p1 = cur_line + 1;
+    imgpel *blk_line    = block;
+    block += MB_BLOCK_SIZE;
+    cur_row += span;
+    for (int i = 0; i < block_size_x; i++)
+    {
+      int result = (w00 * *cur_line++ + w10 * *cur_line_p1++);
+      *(blk_line++) = (imgpel) rshift_rnd_sf(result, total_scale);
+    }
+  }
+}
+
+void get_chroma_XY_generic(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w01, int w10, int w11, int total_scale)
+{
+  imgpel *cur_row = cur_img;
+  imgpel *nxt_row = cur_img + span;
+  for (int j = 0; j < block_size_y; j++)
+  {
+    imgpel *cur_line    = cur_row;
+    imgpel *cur_line_p1 = nxt_row;
+    imgpel *blk_line    = block;
+    block += MB_BLOCK_SIZE;
+    cur_row = nxt_row;
+    nxt_row += span;
+    for (int i = 0; i < block_size_x; i++)
+    {
+      int result  = (w00 * *(cur_line++) + w01 * *(cur_line_p1++));
+      result     += (w10 * *(cur_line  ) + w11 * *(cur_line_p1  ));
+      *(blk_line++) = (imgpel) rshift_rnd_sf(result, total_scale);
+    }
+  }
+}
+
 int f264_strategy_register_mc_generic(void *opaque, uint8_t bitdepth)
 {
   bool success = true;
@@ -209,5 +268,8 @@ int f264_strategy_register_mc_generic(void *opaque, uint8_t bitdepth)
   success &= (f264_strategyselector_register(opaque, "get_luma_03", "generic", 0, (void*)get_luma_03_generic) != 0);
   success &= (f264_strategyselector_register(opaque, "get_luma_22", "generic", 0, (void*)get_luma_22_generic) != 0);
   success &= (f264_strategyselector_register(opaque, "bi_prediction", "generic", 0, (void*)bi_prediction_generic) != 0);
+  success &= (f264_strategyselector_register(opaque, "get_chroma_0X", "generic", 0, (void*)get_chroma_0X_generic) != 0);
+  success &= (f264_strategyselector_register(opaque, "get_chroma_X0", "generic", 0, (void*)get_chroma_X0_generic) != 0);
+  success &= (f264_strategyselector_register(opaque, "get_chroma_XY", "generic", 0, (void*)get_chroma_XY_generic) != 0);
   return success ? 1 : 0;
 }

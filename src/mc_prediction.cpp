@@ -1008,105 +1008,6 @@ void get_block_luma(StorablePicture *curr_ref, int x_pos, int y_pos, int block_s
 }
 
 
-/*!
- ************************************************************************
- * \brief
- *    Chroma (0,X)
- ************************************************************************
- */ 
-static void get_chroma_0X(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w01, int total_scale)
-{
-  imgpel *cur_row = cur_img;
-  imgpel *nxt_row = cur_img + span;
-
-
-  imgpel *cur_line, *cur_line_p1;
-  imgpel *blk_line;
-  int result;
-  int i, j;
-  for (j = 0; j < block_size_y; j++)
-  {
-      cur_line    = cur_row;
-      cur_line_p1 = nxt_row;
-      blk_line = block;
-      block += 16;
-      cur_row = nxt_row;
-      nxt_row += span;
-    for (i = 0; i < block_size_x; i++)
-    {
-      result = (w00 * *cur_line++ + w01 * *cur_line_p1++);
-      *(blk_line++) = (imgpel) rshift_rnd_sf(result, total_scale);
-    }
-  }
-}
-
-
-/*!
- ************************************************************************
- * \brief
- *    Chroma (X,0)
- ************************************************************************
- */ 
-static void get_chroma_X0(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w10, int total_scale)
-{
-  imgpel *cur_row = cur_img;
- 
-
-    imgpel *cur_line, *cur_line_p1;
-    imgpel *blk_line;
-    int result;
-    int i, j;
-    for (j = 0; j < block_size_y; j++)
-    {
-      cur_line    = cur_row;
-      cur_line_p1 = cur_line + 1;
-      blk_line = block;
-      block += 16;
-      cur_row += span;
-      for (i = 0; i < block_size_x; i++)
-      {
-        result = (w00 * *cur_line++ + w10 * *cur_line_p1++);
-        //*(blk_line++) = (imgpel) iClip1(max_imgpel_value, rshift_rnd_sf(result, total_scale));
-        *(blk_line++) = (imgpel) rshift_rnd_sf(result, total_scale);
-      }
-    }
-}
-
-/*!
- ************************************************************************
- * \brief
- *    Chroma (X,X)
- ************************************************************************
- */ 
-static void get_chroma_XY(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w01, int w10, int w11, int total_scale)
-{ 
-  imgpel *cur_row = cur_img;
-  imgpel *nxt_row = cur_img + span;
-
-
-  {
-    imgpel *cur_line, *cur_line_p1;
-    imgpel *blk_line;
-    int result;
-    int i, j;
-    for (j = 0; j < block_size_y; j++)
-    {
-      cur_line    = cur_row;
-      cur_line_p1 = nxt_row;
-      blk_line = block;
-      block += 16;
-      cur_row = nxt_row;
-      nxt_row += span;
-      for (i = 0; i < block_size_x; i++)
-      {
-        result  = (w00 * *(cur_line++) + w01 * *(cur_line_p1++));
-        result += (w10 * *(cur_line  ) + w11 * *(cur_line_p1  ));
-        *(blk_line++) = (imgpel) rshift_rnd_sf(result, total_scale);
-      }
-    }
-  }
-}
-
 static void get_block_chroma(StorablePicture *curr_ref, int x_pos, int y_pos, int subpel_x, int subpel_y, int maxold_x, int maxold_y,
                              int block_size_x, int vert_block_size, int shiftpel_x, int shiftpel_y,
                              imgpel *block1, imgpel *block2, int total_scale, imgpel no_ref_value, VideoParameters *p_Vid)
@@ -1145,22 +1046,22 @@ static void get_block_chroma(StorablePicture *curr_ref, int x_pos, int y_pos, in
       if (dx == 0)
       {
         short w01 = dxcur * dy;
-        get_chroma_0X(block1, img1, span, vert_block_size, block_size_x, w00, w01, total_scale);
-        get_chroma_0X(block2, img2, span, vert_block_size, block_size_x, w00, w01, total_scale);
+        f264_get_chroma_0X(block1, img1, span, vert_block_size, block_size_x, w00, w01, total_scale);
+        f264_get_chroma_0X(block2, img2, span, vert_block_size, block_size_x, w00, w01, total_scale);
       }
       else if (dy == 0)
       {
         short w10 = dx * dycur;
-        get_chroma_X0(block1, img1, span, vert_block_size, block_size_x, w00, w10, total_scale);
-        get_chroma_X0(block2, img2, span, vert_block_size, block_size_x, w00, w10, total_scale);
+        f264_get_chroma_X0(block1, img1, span, vert_block_size, block_size_x, w00, w10, total_scale);
+        f264_get_chroma_X0(block2, img2, span, vert_block_size, block_size_x, w00, w10, total_scale);
       }
       else
       {
         short w01 = dxcur * dy;
         short w10 = dx * dycur;
         short w11 = dx * dy;
-        get_chroma_XY(block1, img1, span, vert_block_size, block_size_x, w00, w01, w10, w11, total_scale);
-        get_chroma_XY(block2, img2, span, vert_block_size, block_size_x, w00, w01, w10, w11, total_scale);
+        f264_get_chroma_XY(block1, img1, span, vert_block_size, block_size_x, w00, w01, w10, w11, total_scale);
+        f264_get_chroma_XY(block2, img2, span, vert_block_size, block_size_x, w00, w01, w10, w11, total_scale);
       }
     }
   }

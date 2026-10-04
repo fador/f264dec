@@ -462,6 +462,320 @@ static void bi_prediction_avx2(imgpel **mb_pred, imgpel **block_l0, imgpel **blo
   bi_prediction_generic(mb_pred, block_l0, block_l1, block_size_y, block_size_x, ioff);
 }
 
+void get_chroma_0X_avx2(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w01, int total_scale)
+{
+#if defined(F264_ARCH_X86)
+  if (sizeof(imgpel) == 1)
+  {
+    const __m128i weights_0X = _mm_set1_epi16((short)((w01 << 8) | (w00 & 0xff)));
+    const __m128i round_vec  = _mm_set1_epi16((short)(1 << (total_scale - 1)));
+
+    if (block_size_x == 8)
+    {
+      const __m256i weights_0X256 = _mm256_set_m128i(weights_0X, weights_0X);
+      const __m256i round_vec256  = _mm256_set_m128i(round_vec, round_vec);
+
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        const imgpel *c0 = cur_img + (j + 0) * span;
+        const imgpel *n0 = c0 + span;
+        const imgpel *c1 = cur_img + (j + 1) * span;
+        const imgpel *n1 = c1 + span;
+
+        __m256i c_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)c1), _mm_loadu_si128((const __m128i*)c0));
+        __m256i n_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)n1), _mm_loadu_si128((const __m128i*)n0));
+
+        __m256i pairs_256 = _mm256_unpacklo_epi8(c_256, n_256);
+        __m256i sum = _mm256_add_epi16(_mm256_maddubs_epi16(pairs_256, weights_0X256), round_vec256);
+        __m256i res = _mm256_srai_epi16(sum, total_scale);
+        __m256i packed = _mm256_packus_epi16(res, res);
+
+        _mm_storel_epi64((__m128i*)(block + (j + 0) * MB_BLOCK_SIZE), _mm256_castsi256_si128(packed));
+        _mm_storel_epi64((__m128i*)(block + (j + 1) * MB_BLOCK_SIZE), _mm256_extracti128_si256(packed, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        const imgpel *c = cur_img + j * span;
+        const imgpel *n = c + span;
+
+        __m128i cv = _mm_loadu_si128((const __m128i*)c);
+        __m128i nv = _mm_loadu_si128((const __m128i*)n);
+
+        __m128i pairs = _mm_unpacklo_epi8(cv, nv);
+        __m128i sum = _mm_add_epi16(_mm_maddubs_epi16(pairs, weights_0X), round_vec);
+        __m128i res = _mm_srai_epi16(sum, total_scale);
+        __m128i packed = _mm_packus_epi16(res, res);
+
+        _mm_storel_epi64((__m128i*)(block + j * MB_BLOCK_SIZE), packed);
+      }
+      return;
+    }
+    else if (block_size_x == 4)
+    {
+      const __m256i weights_0X256 = _mm256_set_m128i(weights_0X, weights_0X);
+      const __m256i round_vec256  = _mm256_set_m128i(round_vec, round_vec);
+
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        const imgpel *c0 = cur_img + (j + 0) * span;
+        const imgpel *n0 = c0 + span;
+        const imgpel *c1 = cur_img + (j + 1) * span;
+        const imgpel *n1 = c1 + span;
+
+        __m256i c_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)c1), _mm_loadu_si128((const __m128i*)c0));
+        __m256i n_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)n1), _mm_loadu_si128((const __m128i*)n0));
+
+        __m256i pairs_256 = _mm256_unpacklo_epi8(c_256, n_256);
+        __m256i sum = _mm256_add_epi16(_mm256_maddubs_epi16(pairs_256, weights_0X256), round_vec256);
+        __m256i res = _mm256_srai_epi16(sum, total_scale);
+        __m256i packed = _mm256_packus_epi16(res, res);
+
+        *(int32_t*)(block + (j + 0) * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(_mm256_castsi256_si128(packed));
+        *(int32_t*)(block + (j + 1) * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(_mm256_extracti128_si256(packed, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        const imgpel *c = cur_img + j * span;
+        const imgpel *n = c + span;
+
+        __m128i cv = _mm_loadu_si128((const __m128i*)c);
+        __m128i nv = _mm_loadu_si128((const __m128i*)n);
+
+        __m128i pairs = _mm_unpacklo_epi8(cv, nv);
+        __m128i sum = _mm_add_epi16(_mm_maddubs_epi16(pairs, weights_0X), round_vec);
+        __m128i res = _mm_srai_epi16(sum, total_scale);
+        __m128i packed = _mm_packus_epi16(res, res);
+
+        *(int32_t*)(block + j * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(packed);
+      }
+      return;
+    }
+  }
+#endif
+  get_chroma_0X_generic(block, cur_img, span, block_size_y, block_size_x, w00, w01, total_scale);
+}
+
+void get_chroma_X0_avx2(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w10, int total_scale)
+{
+#if defined(F264_ARCH_X86)
+  if (sizeof(imgpel) == 1)
+  {
+    const __m128i weights_X0 = _mm_set1_epi16((short)((w10 << 8) | (w00 & 0xff)));
+    const __m128i round_vec  = _mm_set1_epi16((short)(1 << (total_scale - 1)));
+
+    if (block_size_x == 8)
+    {
+      const __m256i weights_X0256 = _mm256_set_m128i(weights_X0, weights_X0);
+      const __m256i round_vec256  = _mm256_set_m128i(round_vec, round_vec);
+
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        const imgpel *c0 = cur_img + (j + 0) * span;
+        const imgpel *c1 = cur_img + (j + 1) * span;
+
+        __m256i c_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)c1), _mm_loadu_si128((const __m128i*)c0));
+        __m256i cs_256 = _mm256_srli_si256(c_256, 1);
+
+        __m256i pairs_256 = _mm256_unpacklo_epi8(c_256, cs_256);
+        __m256i sum = _mm256_add_epi16(_mm256_maddubs_epi16(pairs_256, weights_X0256), round_vec256);
+        __m256i res = _mm256_srai_epi16(sum, total_scale);
+        __m256i packed = _mm256_packus_epi16(res, res);
+
+        _mm_storel_epi64((__m128i*)(block + (j + 0) * MB_BLOCK_SIZE), _mm256_castsi256_si128(packed));
+        _mm_storel_epi64((__m128i*)(block + (j + 1) * MB_BLOCK_SIZE), _mm256_extracti128_si256(packed, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        const imgpel *c = cur_img + j * span;
+
+        __m128i cv = _mm_loadu_si128((const __m128i*)c);
+        __m128i cs = _mm_srli_si128(cv, 1);
+
+        __m128i pairs = _mm_unpacklo_epi8(cv, cs);
+        __m128i sum = _mm_add_epi16(_mm_maddubs_epi16(pairs, weights_X0), round_vec);
+        __m128i res = _mm_srai_epi16(sum, total_scale);
+        __m128i packed = _mm_packus_epi16(res, res);
+
+        _mm_storel_epi64((__m128i*)(block + j * MB_BLOCK_SIZE), packed);
+      }
+      return;
+    }
+    else if (block_size_x == 4)
+    {
+      const __m256i weights_X0256 = _mm256_set_m128i(weights_X0, weights_X0);
+      const __m256i round_vec256  = _mm256_set_m128i(round_vec, round_vec);
+
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        const imgpel *c0 = cur_img + (j + 0) * span;
+        const imgpel *c1 = cur_img + (j + 1) * span;
+
+        __m256i c_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)c1), _mm_loadu_si128((const __m128i*)c0));
+        __m256i cs_256 = _mm256_srli_si256(c_256, 1);
+
+        __m256i pairs_256 = _mm256_unpacklo_epi8(c_256, cs_256);
+        __m256i sum = _mm256_add_epi16(_mm256_maddubs_epi16(pairs_256, weights_X0256), round_vec256);
+        __m256i res = _mm256_srai_epi16(sum, total_scale);
+        __m256i packed = _mm256_packus_epi16(res, res);
+
+        *(int32_t*)(block + (j + 0) * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(_mm256_castsi256_si128(packed));
+        *(int32_t*)(block + (j + 1) * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(_mm256_extracti128_si256(packed, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        const imgpel *c = cur_img + j * span;
+
+        __m128i cv = _mm_loadu_si128((const __m128i*)c);
+        __m128i cs = _mm_srli_si128(cv, 1);
+
+        __m128i pairs = _mm_unpacklo_epi8(cv, cs);
+        __m128i sum = _mm_add_epi16(_mm_maddubs_epi16(pairs, weights_X0), round_vec);
+        __m128i res = _mm_srai_epi16(sum, total_scale);
+        __m128i packed = _mm_packus_epi16(res, res);
+
+        *(int32_t*)(block + j * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(packed);
+      }
+      return;
+    }
+  }
+#endif
+  get_chroma_X0_generic(block, cur_img, span, block_size_y, block_size_x, w00, w10, total_scale);
+}
+
+void get_chroma_XY_avx2(imgpel *block, imgpel *cur_img, int span, int block_size_y, int block_size_x, int w00, int w01, int w10, int w11, int total_scale)
+{
+#if defined(F264_ARCH_X86)
+  if (sizeof(imgpel) == 1)
+  {
+    const __m128i weights_cur = _mm_set1_epi16((short)((w10 << 8) | (w00 & 0xff)));
+    const __m128i weights_nxt = _mm_set1_epi16((short)((w11 << 8) | (w01 & 0xff)));
+    const __m128i round_vec   = _mm_set1_epi16((short)(1 << (total_scale - 1)));
+
+    if (block_size_x == 8)
+    {
+      const __m256i weights_cur256 = _mm256_set_m128i(weights_cur, weights_cur);
+      const __m256i weights_nxt256 = _mm256_set_m128i(weights_nxt, weights_nxt);
+      const __m256i round_vec256   = _mm256_set_m128i(round_vec, round_vec);
+
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        const imgpel *c0 = cur_img + (j + 0) * span;
+        const imgpel *n0 = c0 + span;
+        const imgpel *c1 = cur_img + (j + 1) * span;
+        const imgpel *n1 = c1 + span;
+
+        __m256i c_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)c1), _mm_loadu_si128((const __m128i*)c0));
+        __m256i n_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)n1), _mm_loadu_si128((const __m128i*)n0));
+
+        __m256i cs_256 = _mm256_srli_si256(c_256, 1);
+        __m256i ns_256 = _mm256_srli_si256(n_256, 1);
+
+        __m256i pc_256 = _mm256_unpacklo_epi8(c_256, cs_256);
+        __m256i pn_256 = _mm256_unpacklo_epi8(n_256, ns_256);
+
+        __m256i t1 = _mm256_maddubs_epi16(pc_256, weights_cur256);
+        __m256i t2 = _mm256_maddubs_epi16(pn_256, weights_nxt256);
+
+        __m256i sum = _mm256_add_epi16(_mm256_add_epi16(t1, t2), round_vec256);
+        __m256i res = _mm256_srai_epi16(sum, total_scale);
+        __m256i packed = _mm256_packus_epi16(res, res);
+
+        _mm_storel_epi64((__m128i*)(block + (j + 0) * MB_BLOCK_SIZE), _mm256_castsi256_si128(packed));
+        _mm_storel_epi64((__m128i*)(block + (j + 1) * MB_BLOCK_SIZE), _mm256_extracti128_si256(packed, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        const imgpel *c = cur_img + j * span;
+        const imgpel *n = c + span;
+
+        __m128i cv = _mm_loadu_si128((const __m128i*)c);
+        __m128i nv = _mm_loadu_si128((const __m128i*)n);
+
+        __m128i cs = _mm_srli_si128(cv, 1);
+        __m128i ns = _mm_srli_si128(nv, 1);
+
+        __m128i pc = _mm_unpacklo_epi8(cv, cs);
+        __m128i pn = _mm_unpacklo_epi8(nv, ns);
+
+        __m128i t1 = _mm_maddubs_epi16(pc, weights_cur);
+        __m128i t2 = _mm_maddubs_epi16(pn, weights_nxt);
+
+        __m128i sum = _mm_add_epi16(_mm_add_epi16(t1, t2), round_vec);
+        __m128i res = _mm_srai_epi16(sum, total_scale);
+        __m128i packed = _mm_packus_epi16(res, res);
+
+        _mm_storel_epi64((__m128i*)(block + j * MB_BLOCK_SIZE), packed);
+      }
+      return;
+    }
+    else if (block_size_x == 4)
+    {
+      const __m256i weights_cur256 = _mm256_set_m128i(weights_cur, weights_cur);
+      const __m256i weights_nxt256 = _mm256_set_m128i(weights_nxt, weights_nxt);
+      const __m256i round_vec256   = _mm256_set_m128i(round_vec, round_vec);
+
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        const imgpel *c0 = cur_img + (j + 0) * span;
+        const imgpel *n0 = c0 + span;
+        const imgpel *c1 = cur_img + (j + 1) * span;
+        const imgpel *n1 = c1 + span;
+
+        __m256i c_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)c1), _mm_loadu_si128((const __m128i*)c0));
+        __m256i n_256 = _mm256_set_m128i(_mm_loadu_si128((const __m128i*)n1), _mm_loadu_si128((const __m128i*)n0));
+
+        __m256i cs_256 = _mm256_srli_si256(c_256, 1);
+        __m256i ns_256 = _mm256_srli_si256(n_256, 1);
+
+        __m256i pc_256 = _mm256_unpacklo_epi8(c_256, cs_256);
+        __m256i pn_256 = _mm256_unpacklo_epi8(n_256, ns_256);
+
+        __m256i t1 = _mm256_maddubs_epi16(pc_256, weights_cur256);
+        __m256i t2 = _mm256_maddubs_epi16(pn_256, weights_nxt256);
+
+        __m256i sum = _mm256_add_epi16(_mm256_add_epi16(t1, t2), round_vec256);
+        __m256i res = _mm256_srai_epi16(sum, total_scale);
+        __m256i packed = _mm256_packus_epi16(res, res);
+
+        *(int32_t*)(block + (j + 0) * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(_mm256_castsi256_si128(packed));
+        *(int32_t*)(block + (j + 1) * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(_mm256_extracti128_si256(packed, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        const imgpel *c = cur_img + j * span;
+        const imgpel *n = c + span;
+
+        __m128i cv = _mm_loadu_si128((const __m128i*)c);
+        __m128i nv = _mm_loadu_si128((const __m128i*)n);
+
+        __m128i cs = _mm_srli_si128(cv, 1);
+        __m128i ns = _mm_srli_si128(nv, 1);
+
+        __m128i pc = _mm_unpacklo_epi8(cv, cs);
+        __m128i pn = _mm_unpacklo_epi8(nv, ns);
+
+        __m128i t1 = _mm_maddubs_epi16(pc, weights_cur);
+        __m128i t2 = _mm_maddubs_epi16(pn, weights_nxt);
+
+        __m128i sum = _mm_add_epi16(_mm_add_epi16(t1, t2), round_vec);
+        __m128i res = _mm_srai_epi16(sum, total_scale);
+        __m128i packed = _mm_packus_epi16(res, res);
+
+        *(int32_t*)(block + j * MB_BLOCK_SIZE) = _mm_cvtsi128_si32(packed);
+      }
+      return;
+    }
+  }
+#endif
+  get_chroma_XY_generic(block, cur_img, span, block_size_y, block_size_x, w00, w01, w10, w11, total_scale);
+}
+
 #endif // F264_ARCH_X86
 
 int f264_strategy_register_mc_avx2(void *opaque, uint8_t bitdepth)
@@ -476,6 +790,9 @@ int f264_strategy_register_mc_avx2(void *opaque, uint8_t bitdepth)
   success &= (f264_strategyselector_register(opaque, "get_luma_03", "avx2", 20, (void*)get_luma_03_avx2) != 0);
   success &= (f264_strategyselector_register(opaque, "get_luma_22", "avx2", 20, (void*)get_luma_22_avx2) != 0);
   success &= (f264_strategyselector_register(opaque, "bi_prediction", "avx2", 20, (void*)bi_prediction_avx2) != 0);
+  success &= (f264_strategyselector_register(opaque, "get_chroma_0X", "avx2", 20, (void*)get_chroma_0X_avx2) != 0);
+  success &= (f264_strategyselector_register(opaque, "get_chroma_X0", "avx2", 20, (void*)get_chroma_X0_avx2) != 0);
+  success &= (f264_strategyselector_register(opaque, "get_chroma_XY", "avx2", 20, (void*)get_chroma_XY_avx2) != 0);
   return success ? 1 : 0;
 #else
   return 1;
