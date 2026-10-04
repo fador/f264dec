@@ -1,0 +1,16 @@
+build/
+build*/
+*.obj
+*.o
+*.lib
+*.a
+*.exe
+*.log
+log.dec
+dataDec.txt
+*.yuv
+*.suo
+*.user
+.vs/
+.cache/
+compile_commands.json
