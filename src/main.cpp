@@ -18,6 +18,7 @@ static void print_usage(const char *prog)
               << "  -r, --ref <file>      Reference YUV file for PSNR calculation\n"
               << "  -n, --frames <N>      Maximum number of frames to decode (default: all)\n"
               << "  -t, --threads <N>     Number of worker threads (default: 0 = auto)\n"
+              << "  --cpuid <0|1>         Enable/disable CPUID SIMD optimizations (default: 1)\n"
               << "  -s, --silent          Suppress frame-by-frame console output\n"
               << "  -h, --help            Show this help message\n";
 }
@@ -29,6 +30,7 @@ int main(int argc, char **argv)
     std::string reffile;
     int max_frames = 0;
     int threads = 0;
+    int cpuid = 1;
     bool silent = false;
 
     std::vector<std::string> pos_args;
@@ -48,6 +50,8 @@ int main(int argc, char **argv)
             max_frames = std::atoi(argv[++i]);
         } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
             threads = std::atoi(argv[++i]);
+        } else if (arg == "--cpuid" && i + 1 < argc) {
+            cpuid = std::atoi(argv[++i]);
         } else if (arg == "-s" || arg == "--silent") {
             silent = true;
         } else if (!arg.empty() && arg[0] != '-') {
@@ -84,6 +88,7 @@ int main(int argc, char **argv)
     inp.iDecFrmNum = max_frames;
     inp.silent = silent ? 1 : 0;
     inp.threads = threads;
+    inp.cpuid = cpuid;
 
     init_time();
 

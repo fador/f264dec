@@ -15,10 +15,12 @@ TEST_STREAMS = [
     ("base_cavlc_slices.264", 10, "QCIF Multi-slice Baseline Profile"),
 ]
 
-def run_bench(decoder, stream_path, threads, runs=3):
+def run_bench(decoder, stream_path, threads, cpuid=None, runs=3):
     cmd = [decoder, "-s", "-i", stream_path]
     if threads is not None:
         cmd.extend(["-t", str(threads)])
+    if cpuid is not None:
+        cmd.extend(["--cpuid", str(cpuid)])
     
     times = []
     for _ in range(runs):
@@ -41,6 +43,7 @@ def main():
     parser.add_argument("--decoder", default="build_msvc/Release/f264dec.exe")
     parser.add_argument("--streams-dir", default="tests/streams")
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--cpuid", type=int, default=None, help="1=SIMD, 0=Generic")
     parser.add_argument("--json", help="Output JSON results file")
     args = parser.parse_args()
 
@@ -55,7 +58,7 @@ def main():
             continue
 
         for th, label in [(1, "1T"), (0, "Multi-T")]:
-            res = run_bench(args.decoder, path, th, args.runs)
+            res = run_bench(args.decoder, path, th, args.cpuid, args.runs)
             if res:
                 best_t, mean_t = res
                 fps = frames / best_t if best_t > 0 else 0

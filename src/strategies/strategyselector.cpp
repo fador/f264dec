@@ -226,6 +226,7 @@ int f264_strategyselector_init(int32_t cpuid, uint8_t bitdepth, uint8_t logging)
     if (f264_g_hardware_flags.intel_flags.sse41) std::fprintf(stderr, "SSE4.1 ");
     if (f264_g_hardware_flags.intel_flags.avx2) std::fprintf(stderr, "AVX2 ");
     if (f264_g_hardware_flags.arm_flags.neon) std::fprintf(stderr, "NEON ");
+    if (!cpuid) std::fprintf(stderr, "Disabled (Generic C++ only)");
     std::fprintf(stderr, "\n");
   }
 

@@ -959,6 +959,7 @@ typedef struct inp_par
   int bDisplayDecParams;
   int dpb_plus[2];
   int threads;                                //!< Number of worker threads for multithreading (0=auto)
+  int cpuid;                                  //!< 1=detect SIMD (AVX2/SSE2), 0=disable SIMD (generic C++ only)
 } InputParameters;
 
 typedef struct old_slice_par

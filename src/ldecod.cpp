@@ -1111,7 +1111,7 @@ int OpenDecoder(InputParameters *p_Inp)
   pDecoder->p_Vid->ref_poc_gap = pDecoder->p_Inp->ref_poc_gap;
   pDecoder->p_Vid->poc_gap = pDecoder->p_Inp->poc_gap;
 
-  f264_strategyselector_init(1, 8, p_Inp->silent ? 0 : 1);
+  f264_strategyselector_init(p_Inp->cpuid, 8, p_Inp->silent ? 0 : 1);
   int nthreads = pDecoder->p_Inp->threads > 0 ? pDecoder->p_Inp->threads : f264_g_hardware_flags.logical_cpu_count;
   pDecoder->thread_queue = f264_threadqueue_init(nthreads > 1 ? nthreads : 0);
   pDecoder->p_Vid->thread_queue = pDecoder->thread_queue;
