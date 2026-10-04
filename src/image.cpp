@@ -153,36 +153,33 @@ static void init_picture(VideoParameters *p_Vid, Slice *currSlice, InputParamete
   {
     if (active_sps->gaps_in_frame_num_value_allowed_flag == 0)
     {
-      // picture error concealment
-      if(p_Inp->conceal_mode !=0)
+      /* Unintentional loss of pictures: perform Advanced Error Concealment */
+      if ((currSlice->frame_num) < ((p_Vid->pre_frame_num + 1) % p_Vid->max_frame_num))
       {
-        if((currSlice->frame_num) < ((p_Vid->pre_frame_num + 1) % p_Vid->max_frame_num))
-        {
-          /* Conceal lost IDR frames and any frames immediately
-             following the IDR. Use frame copy for these since
-             lists cannot be formed correctly for motion copy*/
-          p_Vid->conceal_mode = 1;
-          p_Vid->IDR_concealment_flag = 1;
-          conceal_lost_frames(p_Dpb, currSlice);
-          //reset to original concealment mode for future drops
-          p_Vid->conceal_mode = p_Inp->conceal_mode;
-        }
-        else
-        {
-          //reset to original concealment mode for future drops
-          p_Vid->conceal_mode = p_Inp->conceal_mode;
-
-          p_Vid->IDR_concealment_flag = 0;
-          conceal_lost_frames(p_Dpb, currSlice);
-        }
+        /* Conceal lost IDR frames and any frames immediately
+           following the IDR. Use frame copy for these since
+           lists cannot be formed correctly for motion copy */
+        p_Vid->conceal_mode = 1;
+        p_Vid->IDR_concealment_flag = 1;
+        conceal_lost_frames(p_Dpb, currSlice);
+        p_Vid->IDR_concealment_flag = 0;
+        p_Vid->conceal_mode = p_Inp->conceal_mode;
       }
       else
-      {   /* Advanced Error Concealment would be called here to combat unintentional loss of pictures. */
-        error("An unintentional loss of pictures occurs! Exit\n", 100);
+      {
+        /* Advanced Error Concealment using Motion Vector Copy (mode 2) or user-configured mode */
+        int mode = (p_Inp->conceal_mode != 0) ? p_Inp->conceal_mode : 2;
+        p_Vid->conceal_mode = mode;
+        p_Vid->IDR_concealment_flag = 0;
+        conceal_lost_frames(p_Dpb, currSlice);
+        p_Vid->conceal_mode = p_Inp->conceal_mode;
       }
     }
-    if(p_Vid->conceal_mode == 0)
+    else
+    {
+      /* Intentional gap in frame_num allowed by SPS */
       fill_frame_num_gap(p_Vid, currSlice);
+    }
   }
 
   if(currSlice->nal_reference_idc)

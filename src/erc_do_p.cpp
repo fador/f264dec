@@ -1180,12 +1180,13 @@ static void copy_to_conceal(StorablePicture *src, StorablePicture *dst, VideoPar
 
     if(p_Vid->conceal_slice_type == B_SLICE)
     {
+      PictureStructure structure = (p_Vid->ppSliceList && p_Vid->ppSliceList[0]) ? p_Vid->ppSliceList[0]->structure : FRAME;
       init_lists_for_non_reference_loss(
         p_Vid->p_Dpb_layer[0],
-        dst->slice_type, p_Vid->ppSliceList[0]->structure);
+        dst->slice_type, structure);
     }
-    else
-      p_Vid->ppSliceList[0]->init_lists(p_Vid->ppSliceList[0]); //p_Vid->currentSlice);
+    else if (p_Vid->ppSliceList && p_Vid->ppSliceList[0] && p_Vid->ppSliceList[0]->init_lists)
+      p_Vid->ppSliceList[0]->init_lists(p_Vid->ppSliceList[0]);
 
     multiplier = BLOCK_SIZE;
 
@@ -1263,11 +1264,30 @@ copy_prev_pic_to_concealed_pic(StorablePicture *picture, DecodedPictureBuffer *p
   /* get the last ref pic in dpb */
   StorablePicture *ref_pic = get_last_ref_pic_from_dpb(p_Dpb);
 
-  assert(ref_pic != NULL);
+  if (ref_pic == NULL && p_Vid->last_out_fs && p_Vid->last_out_fs->frame)
+  {
+    ref_pic = p_Vid->last_out_fs->frame;
+  }
 
-  /* copy all the struc from this to current concealment pic */
-  p_Vid->conceal_slice_type = P_SLICE;
-  copy_to_conceal(ref_pic, picture, p_Vid);
+  if (ref_pic != NULL)
+  {
+    /* copy all the structure from this to current concealment pic */
+    p_Vid->conceal_slice_type = P_SLICE;
+    copy_to_conceal(ref_pic, picture, p_Vid);
+  }
+  else
+  {
+    int i;
+    for (i = 0; i < picture->size_y; i++) {
+      memset(picture->imgY[i], 128, picture->size_x * sizeof(imgpel));
+    }
+    if (picture->chroma_format_idc != YUV400) {
+      for (i = 0; i < picture->size_y_cr; i++) {
+        memset(picture->imgUV[0][i], 128, picture->size_x_cr * sizeof(imgpel));
+        memset(picture->imgUV[1][i], 128, picture->size_x_cr * sizeof(imgpel));
+      }
+    }
+  }
 }
 
 
