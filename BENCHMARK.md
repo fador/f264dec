@@ -97,12 +97,13 @@ Measurements taken on AMD Ryzen 9 3900X (MSVC Release build, 3-run minimum):
 
 | Bitstream | Profile / Resolution | Threads | Generic (`--cpuid 0`) | SIMD (`--cpuid 1`) | Speedup |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| `x264_1080p_bench.264` | 1080p 60fps High | 1T | 2.499 s (24.0 FPS) | **2.313 s (25.9 FPS)** | **+8.0%** |
-| `x264_1080p_bench.264` | 1080p 60fps High | Multi-T | 2.497 s (24.0 FPS) | **2.355 s (25.5 FPS)** | **+6.0%** |
-| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 1T | 0.537 s (55.9 FPS) | **0.502 s (59.7 FPS)** | **+7.0%** |
-| `x264_720p_main_slices.264` | 720p Multi-Slice Main | Multi-T | 0.266 s (112.9 FPS) | **0.258 s (115.9 FPS)** | **+2.7%** |
-| `x264_720p_high_cavlc.264` | 720p CAVLC High | 1T | 0.328 s (91.4 FPS) | **0.314 s (95.6 FPS)** | **+4.6%** |
-| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | Multi-T | 0.035 s (285.4 FPS) | **0.034 s (291.3 FPS)** | **+2.1%** |
+| `x264_1080p_bench.264` | 1080p 60fps High | 1T | 2.350 s (25.5 FPS) | **2.386 s (25.1 FPS)** | - |
+| `x264_1080p_bench.264` | 1080p 60fps High | Multi-T | 1.349 s (44.5 FPS) | **1.302 s (46.1 FPS)** | **+80.8% (1.81x vs 1T)** |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 1T | 0.513 s (58.4 FPS) | **0.515 s (58.3 FPS)** | - |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | Multi-T | 0.259 s (115.6 FPS) | **0.256 s (117.3 FPS)** | **+101.2% (2.01x vs 1T)** |
+| `x264_720p_high_cavlc.264` | 720p CAVLC High | 1T | 0.321 s (93.5 FPS) | **0.318 s (94.4 FPS)** | - |
+| `x264_720p_high_cavlc.264` | 720p CAVLC High | Multi-T | 0.220 s (136.2 FPS) | **0.214 s (140.2 FPS)** | **+48.5% (1.48x vs 1T)** |
+| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | Multi-T | 0.034 s (298.2 FPS) | **0.031 s (320.4 FPS)** | **+32.6% (1.33x vs 1T)** |
 
 ---
 
@@ -119,5 +120,9 @@ Measurements taken on AMD Ryzen 9 3900X (MSVC Release build, 3-run minimum):
    - Created `strategies-deblock` module with generic and AVX2/SSE strategy implementations.
    - Vectorized 4-pixel luma normal deblocking (`luma_hor_deblock_normal_avx2` and `luma_ver_deblock_normal_avx2`) with branchless threshold masking and delta clipping.
    - Added 32-bit zero-strength early-exit checks across all 4 MB boundary loops (`edge_loop_luma_ver`, `edge_loop_luma_hor`, `edge_loop_chroma_ver`, `edge_loop_chroma_hor`).
+5. **Commit `252c6ed` - Asynchronous Multi-Frame Pipeline & DAG Threading**:
+   - Implemented an asynchronous multi-frame pipeline (`f264_frame_pipeline`) built upon `f264_threadqueue` directed acyclic graph (DAG) dependency tracking.
+   - Added atomic picture reference counting (`f264_pic_ref` / `f264_pic_unref`) on `StorablePicture` so that DPB sliding-window evictions keep reference frames alive across asynchronous decode boundaries.
+   - Enabled single-slice 1080p video streams (`x264_1080p_bench.264`) to scale from 25.5 FPS up to **46.1 FPS (+80.8% speedup)** on multi-core hardware while preserving 100% bit-exact conformance across the 35 regression streams.
 
 
