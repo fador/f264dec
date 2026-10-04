@@ -6,6 +6,7 @@
 #include "strategies/strategyselector.h"
 #include "strategies/strategies-transform.h"
 #include "strategies/strategies-mc.h"
+#include "strategies/strategies-deblock.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,7 @@ f264_hardware_flags_t f264_g_strategies_available;
 static const f264_strategy_to_select_t strategies_to_select[] = {
   STRATEGIES_TRANSFORM_EXPORTS
   STRATEGIES_MC_EXPORTS
+  STRATEGIES_DEBLOCK_EXPORTS
   { nullptr, nullptr }
 };
 
@@ -203,6 +205,12 @@ int f264_strategyselector_init(int32_t cpuid, uint8_t bitdepth, uint8_t logging)
   // Register MC strategies
   if (!f264_strategy_register_mc(&strategies, bitdepth)) {
     std::fprintf(stderr, "f264_strategy_register_mc failed!\n");
+    return 0;
+  }
+
+  // Register Deblock strategies
+  if (!f264_strategy_register_deblock(&strategies, bitdepth)) {
+    std::fprintf(stderr, "f264_strategy_register_deblock failed!\n");
     return 0;
   }
 
