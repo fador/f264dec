@@ -18,6 +18,7 @@ f264_luma_shift_func f264_get_luma_01 = nullptr;
 f264_luma_shift_func f264_get_luma_03 = nullptr;
 
 f264_luma_22_func f264_get_luma_22 = nullptr;
+f264_bi_pred_func f264_bi_prediction = nullptr;
 
 int f264_strategy_register_mc(void *opaque, uint8_t bitdepth)
 {

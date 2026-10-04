@@ -388,6 +388,80 @@ static void get_luma_22_avx2(imgpel **block, imgpel **cur_imgY, int **tmp_res, i
   get_luma_22_generic(block, cur_imgY, tmp_res, block_size_y, block_size_x, x_pos, max_imgpel_value);
 }
 
+static void bi_prediction_avx2(imgpel **mb_pred, imgpel **block_l0, imgpel **block_l1, int block_size_y, int block_size_x, int ioff)
+{
+  if (sizeof(imgpel) == 1)
+  {
+    const uint8_t *b0 = (const uint8_t*)block_l0[0];
+    const uint8_t *b1 = (const uint8_t*)block_l1[0];
+
+    if (block_size_x == 16)
+    {
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        __m128i row0_l0 = _mm_loadu_si128((const __m128i*)&b0[(j + 0) * MB_BLOCK_SIZE]);
+        __m128i row1_l0 = _mm_loadu_si128((const __m128i*)&b0[(j + 1) * MB_BLOCK_SIZE]);
+        __m128i row0_l1 = _mm_loadu_si128((const __m128i*)&b1[(j + 0) * MB_BLOCK_SIZE]);
+        __m128i row1_l1 = _mm_loadu_si128((const __m128i*)&b1[(j + 1) * MB_BLOCK_SIZE]);
+
+        __m256i l0_256 = _mm256_set_m128i(row1_l0, row0_l0);
+        __m256i l1_256 = _mm256_set_m128i(row1_l1, row0_l1);
+        __m256i avg_256 = _mm256_avg_epu8(l0_256, l1_256);
+
+        _mm_storeu_si128((__m128i*)&mb_pred[j + 0][ioff], _mm256_castsi256_si128(avg_256));
+        _mm_storeu_si128((__m128i*)&mb_pred[j + 1][ioff], _mm256_extracti128_si256(avg_256, 1));
+      }
+      for (; j < block_size_y; j++)
+      {
+        __m128i row_l0 = _mm_loadu_si128((const __m128i*)&b0[j * MB_BLOCK_SIZE]);
+        __m128i row_l1 = _mm_loadu_si128((const __m128i*)&b1[j * MB_BLOCK_SIZE]);
+        _mm_storeu_si128((__m128i*)&mb_pred[j][ioff], _mm_avg_epu8(row_l0, row_l1));
+      }
+      return;
+    }
+    else if (block_size_x == 8)
+    {
+      int j = 0;
+      for (; j + 1 < block_size_y; j += 2)
+      {
+        __m128i row0_l0 = _mm_loadl_epi64((const __m128i*)&b0[(j + 0) * MB_BLOCK_SIZE]);
+        __m128i row1_l0 = _mm_loadl_epi64((const __m128i*)&b0[(j + 1) * MB_BLOCK_SIZE]);
+        __m128i row0_l1 = _mm_loadl_epi64((const __m128i*)&b1[(j + 0) * MB_BLOCK_SIZE]);
+        __m128i row1_l1 = _mm_loadl_epi64((const __m128i*)&b1[(j + 1) * MB_BLOCK_SIZE]);
+
+        __m128i l0_128 = _mm_unpacklo_epi64(row0_l0, row1_l0);
+        __m128i l1_128 = _mm_unpacklo_epi64(row0_l1, row1_l1);
+        __m128i avg_128 = _mm_avg_epu8(l0_128, l1_128);
+
+        _mm_storel_epi64((__m128i*)&mb_pred[j + 0][ioff], avg_128);
+        _mm_storeh_pd((double*)&mb_pred[j + 1][ioff], _mm_castsi128_pd(avg_128));
+      }
+      for (; j < block_size_y; j++)
+      {
+        __m128i row_l0 = _mm_loadl_epi64((const __m128i*)&b0[j * MB_BLOCK_SIZE]);
+        __m128i row_l1 = _mm_loadl_epi64((const __m128i*)&b1[j * MB_BLOCK_SIZE]);
+        _mm_storel_epi64((__m128i*)&mb_pred[j][ioff], _mm_avg_epu8(row_l0, row_l1));
+      }
+      return;
+    }
+    else if (block_size_x == 4)
+    {
+      for (int j = 0; j < block_size_y; j++)
+      {
+        int32_t val0 = *(const int32_t*)&b0[j * MB_BLOCK_SIZE];
+        int32_t val1 = *(const int32_t*)&b1[j * MB_BLOCK_SIZE];
+        __m128i a0 = _mm_cvtsi32_si128(val0);
+        __m128i a1 = _mm_cvtsi32_si128(val1);
+        __m128i avg = _mm_avg_epu8(a0, a1);
+        *(int32_t*)&mb_pred[j][ioff] = _mm_cvtsi128_si32(avg);
+      }
+      return;
+    }
+  }
+  bi_prediction_generic(mb_pred, block_l0, block_l1, block_size_y, block_size_x, ioff);
+}
+
 #endif // F264_ARCH_X86
 
 int f264_strategy_register_mc_avx2(void *opaque, uint8_t bitdepth)
@@ -401,6 +475,7 @@ int f264_strategy_register_mc_avx2(void *opaque, uint8_t bitdepth)
   success &= (f264_strategyselector_register(opaque, "get_luma_01", "avx2", 20, (void*)get_luma_01_avx2) != 0);
   success &= (f264_strategyselector_register(opaque, "get_luma_03", "avx2", 20, (void*)get_luma_03_avx2) != 0);
   success &= (f264_strategyselector_register(opaque, "get_luma_22", "avx2", 20, (void*)get_luma_22_avx2) != 0);
+  success &= (f264_strategyselector_register(opaque, "bi_prediction", "avx2", 20, (void*)bi_prediction_avx2) != 0);
   return success ? 1 : 0;
 #else
   return 1;

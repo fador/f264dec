@@ -179,6 +179,25 @@ void get_luma_22_generic(imgpel **block, imgpel **cur_imgY, int **tmp_res, int b
   }
 }
 
+void bi_prediction_generic(imgpel **mb_pred, imgpel **block_l0, imgpel **block_l1, int block_size_y, int block_size_x, int ioff)
+{
+  imgpel *mpr = &mb_pred[0][ioff];
+  imgpel *b0 = block_l0[0];
+  imgpel *b1 = block_l1[0];
+  int row_inc = MB_BLOCK_SIZE - block_size_x;
+  for (int jj = 0; jj < block_size_y; jj++)
+  {
+    for (int ii = 0; ii < block_size_x; ii += 2) 
+    {
+      *(mpr++) = (imgpel)(((*(b0++) + *(b1++)) + 1) >> 1);
+      *(mpr++) = (imgpel)(((*(b0++) + *(b1++)) + 1) >> 1);
+    }
+    mpr += row_inc;
+    b0  += row_inc;
+    b1  += row_inc;
+  }
+}
+
 int f264_strategy_register_mc_generic(void *opaque, uint8_t bitdepth)
 {
   bool success = true;
@@ -189,5 +208,6 @@ int f264_strategy_register_mc_generic(void *opaque, uint8_t bitdepth)
   success &= (f264_strategyselector_register(opaque, "get_luma_01", "generic", 0, (void*)get_luma_01_generic) != 0);
   success &= (f264_strategyselector_register(opaque, "get_luma_03", "generic", 0, (void*)get_luma_03_generic) != 0);
   success &= (f264_strategyselector_register(opaque, "get_luma_22", "generic", 0, (void*)get_luma_22_generic) != 0);
+  success &= (f264_strategyselector_register(opaque, "bi_prediction", "generic", 0, (void*)bi_prediction_generic) != 0);
   return success ? 1 : 0;
 }

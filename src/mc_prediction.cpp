@@ -106,6 +106,10 @@ static void bi_prediction(imgpel **mb_pred,
                           int block_size_x,
                           int ioff)
 {
+  if (f264_bi_prediction) {
+    f264_bi_prediction(mb_pred, block_l0, block_l1, block_size_y, block_size_x, ioff);
+    return;
+  }
   imgpel *mpr = &mb_pred[0][ioff];
   imgpel *b0 = block_l0[0];
   imgpel *b1 = block_l1[0];
