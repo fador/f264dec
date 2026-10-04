@@ -52,6 +52,12 @@ void f264_threadqueue_free_job(threadqueue_job_t **job_ptr);
 int f264_threadqueue_waitfor(threadqueue_queue_t *tq, threadqueue_job_t *job);
 
 /**
+ * \brief Check if the specified job has completed execution (non-blocking).
+ * \return 1 if completed or job is null, 0 if still pending/running.
+ */
+int f264_threadqueue_job_is_done(threadqueue_job_t *job);
+
+/**
  * \brief Stop all workers in the threadqueue.
  */
 int f264_threadqueue_stop(threadqueue_queue_t *tq);

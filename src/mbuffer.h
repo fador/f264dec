@@ -23,6 +23,7 @@
 
 #include "global.h"
 #include <atomic>
+#include <thread>
 
 #define MAX_LIST_SIZE 33
 //! definition of pic motion parameters
@@ -129,9 +130,19 @@ typedef struct storable_picture
   int         layer_id;
   struct threadqueue_job_t *job;
   int         ref_count;
+  int         row_tracked;   // non-zero: progress_rows is valid (frame pipeline row-level sync)
+  int         progress_rows; // number of luma rows that are final (deblocked + padded)
 } StorablePicture;
 
 typedef StorablePicture *StorablePicturePtr;
+
+// Block until luma rows [0, need_row] of a row-tracked picture are final.
+inline void f264_wait_pic_rows(StorablePicture *p, int need_row) {
+  if (need_row < 0) need_row = 0;
+  std::atomic_ref<int> pr(p->progress_rows);
+  while (pr.load(std::memory_order_acquire) <= need_row)
+    std::this_thread::yield();
+}
 
 inline int f264_pic_ref(StorablePicture *p) {
   if (!p) return 0;

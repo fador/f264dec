@@ -429,6 +429,8 @@ StorablePicture* alloc_storable_picture(VideoParameters *p_Vid, PictureStructure
   get_mem2Dpel_pad (&(s->imgY), size_y, size_x, p_Vid->iLumaPadY, p_Vid->iLumaPadX);
   s->cur_imgY = s->imgY;
   s->ref_count = 1;
+  s->progress_rows = INT_MAX;
+  s->row_tracked = 0;
   s->iLumaStride = size_x+2*p_Vid->iLumaPadX;
   s->iLumaExpandedHeight = size_y+2*p_Vid->iLumaPadY;
 

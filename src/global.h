@@ -904,6 +904,8 @@ typedef struct video_par
 
   struct dec_stat_parameters *dec_stats;
   struct threadqueue_queue_t *thread_queue;
+  void (*row_done_cb)(void *ctx, int mb_row);  //!< optional: called after each fully decoded MB row
+  void *row_done_ctx;
 } VideoParameters;
 
 

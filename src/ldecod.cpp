@@ -1126,6 +1126,9 @@ int OpenDecoder(InputParameters *p_Inp)
     int num_slots = nthreads > 4 ? 4 : nthreads;
     if (num_slots < 2) num_slots = 2;
     pDecoder->frame_pipeline = f264_frame_pipeline_init(num_slots, pDecoder->p_Vid);
+    // Dependent frames spin-wait on reference rows; keep spare workers so the
+    // oldest in-flight job can always make progress.
+    ((FramePipeline*)pDecoder->frame_pipeline)->row_overlap = (nthreads >= num_slots + 2);
   }
 
   if((strcasecmp(p_Inp->outfile, "\"\"")!=0) && (strlen(p_Inp->outfile)>0))

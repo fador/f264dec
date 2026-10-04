@@ -23,11 +23,17 @@ struct FrameWorkerSlot {
   int allocated_FrameHeightInMbs{0};
   int allocated_PicWidthInMbs{0};
   std::vector<StorablePicture*> referenced_pics;
+  // Row-level progress state for the current frame job
+  int db_next_row{0};      // next MB row not yet deblocked
+  int pub_luma_rows{0};    // luma rows already padded and published
+  bool do_deblock{false};
+  bool is_ref{false};
 };
 
 struct FramePipeline {
   int num_slots{0};
   int next_slot_idx{0};
+  bool row_overlap{false}; // allow dependent P frames to start before refs are finished
   std::vector<FrameWorkerSlot> slots;
 };
 

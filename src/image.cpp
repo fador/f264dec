@@ -690,6 +690,121 @@ static void CopyPOC(Slice *pSlice0, Slice *currSlice)
   currSlice->ThisPOC   = pSlice0->ThisPOC;
 }
 
+// ---------------------------------------------------------------------------
+// Row-level progress for the frame pipeline.
+//
+// Deblocking of MB row r is delayed until MB row r+1 has been decoded, because
+// intra prediction of row r+1 needs the unfiltered bottom line of row r.
+// After deblocking rows [0, r) the luma rows [0, (r-1)*16) are final, which is
+// published (after padding) so that dependent frames can start motion
+// compensation before this picture is completely finished.
+// ---------------------------------------------------------------------------
+static void pipe_pad_plane_lr(imgpel *pImgBuf, int iWidth, int iStride, int iPadX, int y0, int y1)
+{
+  for (int j = y0; j < y1; j++)
+  {
+    imgpel *line = pImgBuf + (size_t)j * iStride;
+    imgpel l = line[0];
+    imgpel r = line[iWidth - 1];
+    for (int i = 1; i <= iPadX; i++)
+      line[-i] = l;
+    for (int i = 0; i < iPadX; i++)
+      line[iWidth + i] = r;
+  }
+}
+
+static void pipe_pad_plane_top(imgpel *pImgBuf, int iStride, int iPadX, int iPadY)
+{
+  imgpel *pLine0 = pImgBuf - iPadX;
+  for (int j = -iPadY; j < 0; j++)
+    memcpy(pLine0 + (ptrdiff_t)j * iStride, pLine0, iStride * sizeof(imgpel));
+}
+
+static void pipe_pad_plane_bottom(imgpel *pImgBuf, int iHeight, int iStride, int iPadX, int iPadY)
+{
+  imgpel *pLine0 = pImgBuf - iPadX;
+  imgpel *pLine = pLine0 + (ptrdiff_t)(iHeight - 1) * iStride;
+  for (int j = iHeight; j < iHeight + iPadY; j++)
+    memcpy(pLine0 + (ptrdiff_t)j * iStride, pLine, iStride * sizeof(imgpel));
+}
+
+static void pipe_publish_rows(FrameWorkerSlot *s, int luma_rows)
+{
+  StorablePicture *p = s->dec_picture;
+  VideoParameters *v = s->p_Vid;
+  if (luma_rows > p->size_y)
+    luma_rows = p->size_y;
+  if (luma_rows <= s->pub_luma_rows)
+    return;
+  ScopedTimer timer(g_profile_stats.pad_ns);
+  const int y0 = s->pub_luma_rows;
+  const int y1 = luma_rows;
+  pipe_pad_plane_lr(*p->imgY, p->size_x, p->iLumaStride, v->iLumaPadX, y0, y1);
+  if (p->chroma_format_idc != YUV400)
+  {
+    const int cy0 = (int)((int64)y0 * p->size_y_cr / p->size_y);
+    const int cy1 = (int)((int64)y1 * p->size_y_cr / p->size_y);
+    pipe_pad_plane_lr(*p->imgUV[0], p->size_x_cr, p->iChromaStride, v->iChromaPadX, cy0, cy1);
+    pipe_pad_plane_lr(*p->imgUV[1], p->size_x_cr, p->iChromaStride, v->iChromaPadX, cy0, cy1);
+  }
+  if (y0 == 0)
+  {
+    pipe_pad_plane_top(*p->imgY, p->iLumaStride, v->iLumaPadX, v->iLumaPadY);
+    if (p->chroma_format_idc != YUV400)
+    {
+      pipe_pad_plane_top(*p->imgUV[0], p->iChromaStride, v->iChromaPadX, v->iChromaPadY);
+      pipe_pad_plane_top(*p->imgUV[1], p->iChromaStride, v->iChromaPadX, v->iChromaPadY);
+    }
+  }
+  s->pub_luma_rows = y1;
+  std::atomic_ref<int>(p->progress_rows).store(y1, std::memory_order_release);
+}
+
+static void pipe_row_done(void *ctx, int row)
+{
+  FrameWorkerSlot *s = (FrameWorkerSlot*)ctx;
+  int final_mb_rows;
+  if (s->do_deblock)
+  {
+    if (row >= 1)
+    {
+      DeblockMbRows(s->p_Vid, s->dec_picture, s->db_next_row, row);
+      s->db_next_row = row;
+    }
+    final_mb_rows = row - 1;
+  }
+  else
+  {
+    final_mb_rows = row + 1;
+  }
+  if (s->is_ref && final_mb_rows > 0)
+    pipe_publish_rows(s, final_mb_rows * MB_BLOCK_SIZE);
+}
+
+static void pipe_finish_picture(FrameWorkerSlot *s)
+{
+  StorablePicture *p = s->dec_picture;
+  VideoParameters *v = s->p_Vid;
+  if (s->do_deblock)
+  {
+    int rows = (int)(p->PicSizeInMbs / v->PicWidthInMbs);
+    DeblockMbRows(v, p, s->db_next_row, rows);
+    s->db_next_row = rows;
+  }
+  if (s->is_ref)
+  {
+    pipe_publish_rows(s, p->size_y);
+    ScopedTimer timer(g_profile_stats.pad_ns);
+    pipe_pad_plane_bottom(*p->imgY, p->size_y, p->iLumaStride, v->iLumaPadX, v->iLumaPadY);
+    if (p->chroma_format_idc != YUV400)
+    {
+      pipe_pad_plane_bottom(*p->imgUV[0], p->size_y_cr, p->iChromaStride, v->iChromaPadX, v->iChromaPadY);
+      pipe_pad_plane_bottom(*p->imgUV[1], p->size_y_cr, p->iChromaStride, v->iChromaPadX, v->iChromaPadY);
+    }
+    std::atomic_ref<int>(p->progress_rows).store(INT_MAX, std::memory_order_release);
+  }
+}
+
 
 
 /*!
@@ -859,9 +974,20 @@ int decode_one_frame(DecoderParams *pDecoder)
       f264_frame_pipeline_flush(pipeline, p_Vid->thread_queue);
     }
 
-    // Select slot
-    FrameWorkerSlot *slot = &pipeline->slots[pipeline->next_slot_idx];
-    pipeline->next_slot_idx = (pipeline->next_slot_idx + 1) % pipeline->num_slots;
+    // Select slot: prioritize an idle or already finished slot
+    int chosen_slot = -1;
+    for (int i = 0; i < pipeline->num_slots; i++) {
+      int idx = (pipeline->next_slot_idx + i) % pipeline->num_slots;
+      if (!pipeline->slots[idx].job || f264_threadqueue_job_is_done(pipeline->slots[idx].job)) {
+        chosen_slot = idx;
+        break;
+      }
+    }
+    if (chosen_slot == -1) {
+      chosen_slot = pipeline->next_slot_idx;
+    }
+    pipeline->next_slot_idx = (chosen_slot + 1) % pipeline->num_slots;
+    FrameWorkerSlot *slot = &pipeline->slots[chosen_slot];
 
     // If slot has a previous job running, wait for it and free
     if (slot->job) {
@@ -932,20 +1058,23 @@ int decode_one_frame(DecoderParams *pDecoder)
     slot->job = f264_threadqueue_job_create(
       [](void *arg) {
         auto *s = (FrameWorkerSlot*)arg;
+        s->db_next_row = 0;
+        s->pub_luma_rows = 0;
+        s->is_ref = s->dec_picture->used_for_reference != 0;
+        s->do_deblock = !s->p_Vid->iDeblockMode && (s->p_Vid->bDeblockEnable & (1 << s->dec_picture->used_for_reference));
+        s->p_Vid->row_done_cb = pipe_row_done;
+        s->p_Vid->row_done_ctx = s;
         for (int i = 0; i < s->iSliceNumOfCurrPic; i++) {
           decode_slice(s->ppSliceList[i], s->ppSliceList[i]->current_header);
           s->p_Vid->iNumOfSlicesDecoded++;
           s->p_Vid->num_dec_mb += s->ppSliceList[i]->num_dec_mb;
           s->p_Vid->erc_mvperMB += s->ppSliceList[i]->erc_mvperMB;
         }
-        if (!s->p_Vid->iDeblockMode && (s->p_Vid->bDeblockEnable & (1 << s->dec_picture->used_for_reference))) {
-          DeblockPicture(s->p_Vid, s->dec_picture);
-        }
+        s->p_Vid->row_done_cb = nullptr;
+        s->p_Vid->row_done_ctx = nullptr;
+        pipe_finish_picture(s);
         if (s->dec_picture->mb_aff_frame_flag) {
           MbAffPostProc(s->p_Vid);
-        }
-        if (s->dec_picture->used_for_reference) {
-          pad_dec_picture(s->p_Vid, s->dec_picture);
         }
         // Release references to pictures used by this frame
         for (auto *ref : s->referenced_pics) {
@@ -960,6 +1089,14 @@ int decode_one_frame(DecoderParams *pDecoder)
     // Hold reference to own dec_picture
     f264_pic_ref(slot->dec_picture);
     slot->referenced_pics.push_back(slot->dec_picture);
+
+    // Row-level overlap: reference frames publish rows as they become final,
+    // so following frames do not have to wait for the whole job to finish.
+    const bool track_rows = pipeline->row_overlap &&
+                            slot->dec_picture->used_for_reference != 0 &&
+                            slot->iSliceNumOfCurrPic == 1;
+    slot->dec_picture->row_tracked = track_rows ? 1 : 0;
+    std::atomic_ref<int>(slot->dec_picture->progress_rows).store(track_rows ? 0 : INT_MAX, std::memory_order_release);
 
     // Add dependencies and hold references on all active reference pictures
     for (int i = 0; i < slot->iSliceNumOfCurrPic; i++) {
@@ -977,7 +1114,9 @@ int decode_one_frame(DecoderParams *pDecoder)
               slot->referenced_pics.push_back(ref);
             }
             if (ref->job) {
-              f264_threadqueue_job_dep_add(slot->job, ref->job);
+              // Row-tracked references are synchronized dynamically in motion compensation
+              if (!ref->row_tracked)
+                f264_threadqueue_job_dep_add(slot->job, ref->job);
             }
           }
         }
@@ -2421,6 +2560,9 @@ void decode_one_slice(Slice *currSlice)
     ercWriteMBMODEandMV(currMB);
 
     end_of_slice = exit_macroblock(currSlice, (!currSlice->mb_aff_frame_flag|| currSlice->current_mb_nr%2));
+
+    if (p_Vid->row_done_cb && ((currMB->mbAddrX + 1) % (int)p_Vid->PicWidthInMbs) == 0)
+      p_Vid->row_done_cb(p_Vid->row_done_ctx, currMB->mbAddrX / (int)p_Vid->PicWidthInMbs);
   }
   //reset_ec_flags(p_Vid);
 }

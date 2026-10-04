@@ -76,6 +76,34 @@ void DeblockPicture(VideoParameters *p_Vid, StorablePicture *p)
   }
 }
 
+/*!
+ *****************************************************************************************
+ * \brief
+ *    Deblock macroblock rows [row0, row1) of a non-MBAFF frame picture. Calling this
+ *    for consecutive row ranges in increasing order is equivalent to DeblockPicture().
+ *****************************************************************************************
+ */
+void DeblockMbRows(VideoParameters *p_Vid, StorablePicture *p, int row0, int row1)
+{
+  ScopedTimer timer(g_profile_stats.deblock_ns);
+  if (row1 <= row0)
+    return;
+  const unsigned first = (unsigned)row0 * p_Vid->PicWidthInMbs;
+  unsigned last = (unsigned)row1 * p_Vid->PicWidthInMbs;
+  if (last > p->PicSizeInMbs)
+    last = p->PicSizeInMbs;
+  {
+    ScopedTimer timer_str(g_profile_stats.db_strength_ns);
+    for (unsigned i = first; i < last; ++i)
+      get_db_strength( p_Vid, p, i );
+  }
+  {
+    ScopedTimer timer_flt(g_profile_stats.db_filter_ns);
+    for (unsigned i = first; i < last; ++i)
+      perform_db( p_Vid, p, i );
+  }
+}
+
 // likely already set - see testing via asserts
 static void init_neighbors(VideoParameters *p_Vid)
 {

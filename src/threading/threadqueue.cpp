@@ -243,6 +243,13 @@ int f264_threadqueue_waitfor(threadqueue_queue_t *tq, threadqueue_job_t *job)
   return 1;
 }
 
+int f264_threadqueue_job_is_done(threadqueue_job_t *job)
+{
+  if (!job) return 1;
+  std::unique_lock<std::mutex> job_lock(job->lock);
+  return job->state == THREADQUEUE_JOB_STATE_DONE ? 1 : 0;
+}
+
 int f264_threadqueue_stop(threadqueue_queue_t *tq)
 {
   if (!tq) return 0;

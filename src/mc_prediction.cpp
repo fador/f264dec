@@ -1348,6 +1348,8 @@ static void perform_mc_single_wp(Macroblock *currMB, ColorPlane pl, StorablePict
   check_motion_vector_range(mv_array, currSlice);
   vec1_x = i4 * mv_mul + mv_array->mv_x;
   vec1_y = (currMB->block_y_aff + j) * mv_mul + mv_array->mv_y;
+  if (list && list->row_tracked)
+    f264_wait_pic_rows(list, (vec1_y >> 2) + block_size_y + 4);
   if(block_size_y > (p_Vid->iLumaPadY-4) && CheckVertMV(currMB, vec1_y, block_size_y))
   {
     get_block_luma(list, vec1_x, vec1_y, block_size_x, BLOCK_SIZE_8x8, tmp_block_l0, shift_x,maxold_x,maxold_y,tmp_res,max_imgpel_value,no_ref_value, currMB);
@@ -1442,6 +1444,8 @@ static void perform_mc_single(Macroblock *currMB, ColorPlane pl, StorablePicture
   check_motion_vector_range(mv_array, currSlice);
   vec1_x = i4 * mv_mul + mv_array->mv_x;
   vec1_y = (currMB->block_y_aff + j) * mv_mul + mv_array->mv_y;
+  if (list && list->row_tracked)
+    f264_wait_pic_rows(list, (vec1_y >> 2) + block_size_y + 4);
   
     if (block_size_y > (p_Vid->iLumaPadY-4) && CheckVertMV(currMB, vec1_y, block_size_y))
     {
@@ -1548,6 +1552,10 @@ static void perform_mc_bi_wp(Macroblock *currMB, ColorPlane pl, StorablePicture 
   vec2_x = i4 * mv_mul + l1_mv_array->mv_x;
   vec1_y = (block_y_aff + j) * mv_mul + l0_mv_array->mv_y;
   vec2_y = (block_y_aff + j) * mv_mul + l1_mv_array->mv_y;
+  if (list0 && list0->row_tracked)
+    f264_wait_pic_rows(list0, (vec1_y >> 2) + block_size_y + 4);
+  if (list1 && list1->row_tracked)
+    f264_wait_pic_rows(list1, (vec2_y >> 2) + block_size_y + 4);
 
     if (big_blocky && check_vert_mv(llimit, vec1_y, rlimit))
     {
@@ -1669,6 +1677,10 @@ static void perform_mc_bi(Macroblock *currMB, ColorPlane pl, StorablePicture *de
   vec2_x = i4 * mv_mul + l1_mv_array->mv_x;
   vec1_y = (block_y_aff + j) * mv_mul + l0_mv_array->mv_y;
   vec2_y = (block_y_aff + j) * mv_mul + l1_mv_array->mv_y;
+  if (list0 && list0->row_tracked)
+    f264_wait_pic_rows(list0, (vec1_y >> 2) + block_size_y + 4);
+  if (list1 && list1->row_tracked)
+    f264_wait_pic_rows(list1, (vec2_y >> 2) + block_size_y + 4);
     if (big_blocky && check_vert_mv(llimit, vec1_y, rlimit))
     {
       get_block_luma(list0, vec1_x, vec1_y, block_size_x, BLOCK_SIZE_8x8, tmp_block_l0, shift_x,maxold_x,maxold_y,tmp_res,max_imgpel_value,no_ref_value, currMB);
