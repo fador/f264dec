@@ -30,6 +30,8 @@
 
 #include <math.h>
 #include <limits.h>
+#include <vector>
+#include "threading/threadqueue.h"
 
 #include "global.h"
 #include "image.h"
@@ -822,18 +824,56 @@ int decode_one_frame(DecoderParams *pDecoder)
     for(iSliceNo=0; iSliceNo<p_Vid->iSliceNumOfCurrPic; iSliceNo++)
     {
       currSlice = ppSliceList[iSliceNo];
-      current_header = currSlice->current_header;
-      //p_Vid->currentSlice = currSlice;
-
-      assert(current_header != EOS);
+      assert(currSlice->current_header != EOS);
       assert(currSlice->current_slice_nr == iSliceNo);
-
       init_slice(p_Vid, currSlice);
-      decode_slice(currSlice, current_header);
+    }
 
-      p_Vid->iNumOfSlicesDecoded++;
-      p_Vid->num_dec_mb += currSlice->num_dec_mb;
-      p_Vid->erc_mvperMB += currSlice->erc_mvperMB;
+    struct SliceJobCtx {
+      Slice *slice;
+      int header;
+    };
+
+    if (p_Vid->iSliceNumOfCurrPic > 1 && p_Vid->thread_queue && p_Vid->separate_colour_plane_flag == 0) {
+      std::vector<threadqueue_job_t*> jobs(p_Vid->iSliceNumOfCurrPic);
+      std::vector<SliceJobCtx> job_ctx(p_Vid->iSliceNumOfCurrPic);
+
+      for (iSliceNo = 0; iSliceNo < p_Vid->iSliceNumOfCurrPic; iSliceNo++) {
+        job_ctx[iSliceNo].slice = ppSliceList[iSliceNo];
+        job_ctx[iSliceNo].header = ppSliceList[iSliceNo]->current_header;
+
+        jobs[iSliceNo] = f264_threadqueue_job_create(
+          [](void *arg) {
+            auto *ctx = (SliceJobCtx*)arg;
+            decode_slice(ctx->slice, ctx->header);
+          },
+          &job_ctx[iSliceNo]
+        );
+        f264_threadqueue_submit(p_Vid->thread_queue, jobs[iSliceNo]);
+      }
+
+      for (iSliceNo = 0; iSliceNo < p_Vid->iSliceNumOfCurrPic; iSliceNo++) {
+        f264_threadqueue_waitfor(p_Vid->thread_queue, jobs[iSliceNo]);
+        f264_threadqueue_free_job(&jobs[iSliceNo]);
+
+        currSlice = ppSliceList[iSliceNo];
+        p_Vid->iNumOfSlicesDecoded++;
+        p_Vid->num_dec_mb += currSlice->num_dec_mb;
+        p_Vid->erc_mvperMB += currSlice->erc_mvperMB;
+      }
+    }
+    else {
+      for(iSliceNo=0; iSliceNo<p_Vid->iSliceNumOfCurrPic; iSliceNo++)
+      {
+        currSlice = ppSliceList[iSliceNo];
+        current_header = currSlice->current_header;
+
+        decode_slice(currSlice, current_header);
+
+        p_Vid->iNumOfSlicesDecoded++;
+        p_Vid->num_dec_mb += currSlice->num_dec_mb;
+        p_Vid->erc_mvperMB += currSlice->erc_mvperMB;
+      }
     }
   }
   if(p_Vid->dec_picture->structure == FRAME)

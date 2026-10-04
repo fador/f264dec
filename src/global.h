@@ -47,6 +47,7 @@ extern char errortext[ET_SIZE]; //!< buffer for error message for exit with erro
 
 struct pic_motion_params_old;
 struct pic_motion_params;
+struct threadqueue_queue_t;
 
 /***********************************************************************
  * T y p e    d e f i n i t i o n s    f o r    J M
@@ -902,6 +903,7 @@ typedef struct video_par
 /******************* end deprecative variables; ***************************************/
 
   struct dec_stat_parameters *dec_stats;
+  struct threadqueue_queue_t *thread_queue;
 } VideoParameters;
 
 
@@ -956,6 +958,7 @@ typedef struct inp_par
 
   int bDisplayDecParams;
   int dpb_plus[2];
+  int threads;                                //!< Number of worker threads for multithreading (0=auto)
 } InputParameters;
 
 typedef struct old_slice_par
@@ -981,6 +984,7 @@ typedef struct decoder_params
   int                UsedBits;      // for internal statistics, is adjusted by read_se_v, read_ue_v, read_u_1
   FILE              *p_trace;        //!< Trace file
   int                bitcounter;
+  struct threadqueue_queue_t *thread_queue;
 } DecoderParams;
 
 extern DecoderParams  *p_Dec;

@@ -67,8 +67,14 @@ void forward4x4(int **block, int **tblock, int pos_y, int pos_x)
   }
 }
 
+#include "strategies/strategies-transform.h"
+
 void inverse4x4(int **tblock, int **block, int pos_y, int pos_x)
 {
+  if (f264_inverse4x4) {
+    f264_inverse4x4(tblock, block, pos_y, pos_x);
+    return;
+  }
   int i, ii;  
   int tmp[16];
   int *pTmp = tmp, *pblock;

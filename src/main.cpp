@@ -17,6 +17,7 @@ static void print_usage(const char *prog)
               << "  -o, --output <file>   Output decoded YUV file (optional)\n"
               << "  -r, --ref <file>      Reference YUV file for PSNR calculation\n"
               << "  -n, --frames <N>      Maximum number of frames to decode (default: all)\n"
+              << "  -t, --threads <N>     Number of worker threads (default: 0 = auto)\n"
               << "  -s, --silent          Suppress frame-by-frame console output\n"
               << "  -h, --help            Show this help message\n";
 }
@@ -27,6 +28,7 @@ int main(int argc, char **argv)
     std::string outfile;
     std::string reffile;
     int max_frames = 0;
+    int threads = 0;
     bool silent = false;
 
     std::vector<std::string> pos_args;
@@ -44,6 +46,8 @@ int main(int argc, char **argv)
             reffile = argv[++i];
         } else if ((arg == "-n" || arg == "--frames") && i + 1 < argc) {
             max_frames = std::atoi(argv[++i]);
+        } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
+            threads = std::atoi(argv[++i]);
         } else if (arg == "-s" || arg == "--silent") {
             silent = true;
         } else if (!arg.empty() && arg[0] != '-') {
@@ -79,6 +83,7 @@ int main(int argc, char **argv)
     inp.FileFormat = PAR_OF_ANNEXB;
     inp.iDecFrmNum = max_frames;
     inp.silent = silent ? 1 : 0;
+    inp.threads = threads;
 
     init_time();
 

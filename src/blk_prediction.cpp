@@ -45,8 +45,14 @@ void compute_residue (imgpel **curImg, imgpel **mpr, int **mb_rres, int mb_x, in
   }
 }
 
+#include "strategies/strategies-transform.h"
+
 void sample_reconstruct (imgpel **curImg, imgpel **mpr, int **mb_rres, int mb_x, int opix_x, int width, int height, int max_imgpel_value, int dq_bits)
 {
+  if (f264_sample_reconstruct) {
+    f264_sample_reconstruct(curImg, mpr, mb_rres, mb_x, opix_x, width, height, max_imgpel_value, dq_bits);
+    return;
+  }
   imgpel *imgOrg, *imgPred;
   int    *m7;
   int i, j;

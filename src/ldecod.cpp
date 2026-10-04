@@ -63,6 +63,8 @@
 #include "nalu.h"
 #include "loopfilter.h"
 #include "h264decoder.h"
+#include "strategies/strategyselector.h"
+#include "threading/threadqueue.h"
 
 #define LOGFILE     "log.dec"
 #define DATADECFILE "dataDec.txt"
@@ -1109,6 +1111,11 @@ int OpenDecoder(InputParameters *p_Inp)
   pDecoder->p_Vid->ref_poc_gap = pDecoder->p_Inp->ref_poc_gap;
   pDecoder->p_Vid->poc_gap = pDecoder->p_Inp->poc_gap;
 
+  f264_strategyselector_init(1, 8, p_Inp->silent ? 0 : 1);
+  int nthreads = pDecoder->p_Inp->threads > 0 ? pDecoder->p_Inp->threads : f264_g_hardware_flags.logical_cpu_count;
+  pDecoder->thread_queue = f264_threadqueue_init(nthreads > 1 ? nthreads : 0);
+  pDecoder->p_Vid->thread_queue = pDecoder->thread_queue;
+
   if((strcasecmp(p_Inp->outfile, "\"\"")!=0) && (strlen(p_Inp->outfile)>0))
   {
     if ((pDecoder->p_Vid->p_out = open(p_Inp->outfile, OPENFLAGS_WRITE, OPEN_PERMISSIONS))==-1)
@@ -1208,6 +1215,12 @@ int CloseDecoder()
   DecoderParams *pDecoder = p_Dec;
   if(!pDecoder)
     return DEC_CLOSE_NOERR;
+
+  if (pDecoder->thread_queue) {
+    f264_threadqueue_free(pDecoder->thread_queue);
+    pDecoder->thread_queue = NULL;
+    if (pDecoder->p_Vid) pDecoder->p_Vid->thread_queue = NULL;
+  }
   
   Report  (pDecoder->p_Vid);
   FmoFinit(pDecoder->p_Vid);
