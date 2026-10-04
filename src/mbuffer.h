@@ -22,6 +22,7 @@
 #define _MBUFFERDEC_H_
 
 #include "global.h"
+#include <atomic>
 
 #define MAX_LIST_SIZE 33
 //! definition of pic motion parameters
@@ -126,9 +127,21 @@ typedef struct storable_picture
   char listXsize[MAX_NUM_SLICES][2];
   struct storable_picture **listX[MAX_NUM_SLICES][2];
   int         layer_id;
+  struct threadqueue_job_t *job;
+  int         ref_count;
 } StorablePicture;
 
 typedef StorablePicture *StorablePicturePtr;
+
+inline int f264_pic_ref(StorablePicture *p) {
+  if (!p) return 0;
+  return std::atomic_ref<int>(p->ref_count).fetch_add(1, std::memory_order_relaxed);
+}
+
+inline int f264_pic_unref(StorablePicture *p) {
+  if (!p) return 0;
+  return std::atomic_ref<int>(p->ref_count).fetch_sub(1, std::memory_order_acq_rel);
+}
 
 //! Frame Stores for Decoded Picture Buffer
 typedef struct frame_store

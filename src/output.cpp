@@ -20,6 +20,7 @@
 #include "memalloc.h"
 #include "sei.h"
 #include "fast_memory.h"
+#include "threading/threadqueue.h"
 
 static void write_out_picture(VideoParameters *p_Vid, StorablePicture *p, int p_out);
 static void img2buf_byte   (imgpel** imgX, unsigned char* buf, int size_x, int size_y, int symbol_size_in_bytes, int crop_left, int crop_right, int crop_top, int crop_bottom, int iOutStride);
@@ -639,6 +640,10 @@ void flush_direct_output(VideoParameters *p_Vid, int p_out)
  */
 void write_stored_frame( VideoParameters *p_Vid, FrameStore *fs, int p_out)
 {
+  if (fs->frame && fs->frame->job && p_Vid->thread_queue)
+  {
+    f264_threadqueue_waitfor(p_Vid->thread_queue, fs->frame->job);
+  }
   // make sure no direct output field is pending
   flush_direct_output(p_Vid, p_out);
 
@@ -674,6 +679,10 @@ void write_stored_frame( VideoParameters *p_Vid, FrameStore *fs, int p_out)
 void direct_output(VideoParameters *p_Vid, StorablePicture *p, int p_out)
 {
   InputParameters *p_Inp = p_Vid->p_Inp;
+  if (p && p->job && p_Vid->thread_queue)
+  {
+    f264_threadqueue_waitfor(p_Vid->thread_queue, p->job);
+  }
   if (p->structure==FRAME)
   {
     // we have a frame (or complementary field pair)

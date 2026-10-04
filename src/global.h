@@ -986,12 +986,14 @@ typedef struct decoder_params
   FILE              *p_trace;        //!< Trace file
   int                bitcounter;
   struct threadqueue_queue_t *thread_queue;
+  void *frame_pipeline;
 } DecoderParams;
 
 extern DecoderParams  *p_Dec;
 
 // prototypes
 extern void error(char *text, int code);
+extern void free_slice(Slice *currSlice);
 
 // dynamic mem allocation
 extern int  init_global_buffers( VideoParameters *p_Vid, int layer_id );

@@ -32,6 +32,7 @@
 #include <limits.h>
 #include <vector>
 #include "threading/threadqueue.h"
+#include "threading/frame_pipeline.h"
 
 #include "global.h"
 #include "image.h"
@@ -721,6 +722,10 @@ int decode_one_frame(DecoderParams *pDecoder)
     }
 
     //get the first slice from currentslice;
+    if (!ppSliceList[p_Vid->iSliceNumOfCurrPic])
+    {
+      ppSliceList[p_Vid->iSliceNumOfCurrPic] = malloc_slice(p_Inp, p_Vid);
+    }
     assert(ppSliceList[p_Vid->iSliceNumOfCurrPic]);
     currSlice = ppSliceList[p_Vid->iSliceNumOfCurrPic];
     ppSliceList[p_Vid->iSliceNumOfCurrPic] = p_Vid->pNextSlice;
@@ -820,7 +825,206 @@ int decode_one_frame(DecoderParams *pDecoder)
   iRet = current_header;
   init_picture_decoding(p_Vid);
 
-  {
+  auto *pipeline = (FramePipeline*)pDecoder->frame_pipeline;
+  bool use_frame_pipeline = (
+    pipeline != nullptr &&
+    p_Vid->thread_queue != nullptr &&
+    p_Vid->iSliceNumOfCurrPic == 1 &&
+    p_Vid->separate_colour_plane_flag == 0 &&
+    p_Vid->dec_picture != nullptr &&
+    p_Vid->dec_picture->structure == FRAME &&
+    p_Vid->NumberOfSliceGroups <= 1 &&
+    ppSliceList[0]->mb_aff_frame_flag == 0 &&
+    ppSliceList[0]->dp_mode == PAR_DP_1 &&
+    ppSliceList[0]->active_pps != nullptr &&
+    ppSliceList[0]->active_pps->entropy_coding_mode_flag == 1 &&
+    p_Vid->active_sps != nullptr &&
+    p_Vid->active_sps->pic_order_cnt_type != 1 &&
+    p_Vid->active_sps->frame_mbs_only_flag != 0 &&
+    p_Vid->active_sps->bit_depth_luma_minus8 == 0 &&
+    p_Vid->active_sps->bit_depth_chroma_minus8 == 0 &&
+    p_Vid->active_sps->chroma_format_idc == 1 &&
+    p_Vid->active_pps != nullptr &&
+    !p_Vid->active_pps->constrained_intra_pred_flag &&
+    ppSliceList[0]->slice_type != SP_SLICE &&
+    ppSliceList[0]->slice_type != SI_SLICE
+  );
+
+  if (use_frame_pipeline) {
+    Slice *pSlice0 = ppSliceList[0];
+
+    // If IDR, flush pipeline first so previous GOP finishes
+    if (pSlice0->idr_flag) {
+      f264_frame_pipeline_flush(pipeline, p_Vid->thread_queue);
+    }
+
+    // Select slot
+    FrameWorkerSlot *slot = &pipeline->slots[pipeline->next_slot_idx];
+    pipeline->next_slot_idx = (pipeline->next_slot_idx + 1) % pipeline->num_slots;
+
+    // If slot has a previous job running, wait for it and free
+    if (slot->job) {
+      f264_threadqueue_waitfor(p_Vid->thread_queue, slot->job);
+      f264_threadqueue_free_job(&slot->job);
+    }
+
+    // Free any slices from previous frame in this slot
+    for (int i = 0; i < slot->iSliceNumOfCurrPic; i++) {
+      if (slot->ppSliceList[i]) {
+        free_slice(slot->ppSliceList[i]);
+        slot->ppSliceList[i] = nullptr;
+      }
+    }
+
+    // Ensure slot buffers are allocated for current frame resolution
+    f264_frame_pipeline_ensure_buffers(slot, p_Vid);
+
+    // Transfer slices from master p_Vid to slot
+    slot->iSliceNumOfCurrPic = p_Vid->iSliceNumOfCurrPic;
+    for (int i = 0; i < p_Vid->iSliceNumOfCurrPic; i++) {
+      slot->ppSliceList[i] = ppSliceList[i];
+      ppSliceList[i] = nullptr;
+      slot->ppSliceList[i]->p_Vid = slot->p_Vid;
+      slot->ppSliceList[i]->mb_data = slot->mb_data;
+      slot->ppSliceList[i]->p_Dpb = p_Vid->p_Dpb_layer[0];
+      slot->ppSliceList[i]->p_Inp = p_Vid->p_Inp;
+    }
+
+    // Copy parameters to slot->p_Vid and restore buffer pointers
+    memcpy(slot->p_Vid, p_Vid, sizeof(VideoParameters));
+    slot->p_Vid->mb_data = slot->mb_data;
+    slot->p_Vid->intra_block = slot->intra_block;
+    slot->p_Vid->ipredmode = slot->ipredmode;
+    slot->p_Vid->nz_coeff = slot->nz_coeff;
+    slot->p_Vid->siblock = slot->siblock;
+    slot->p_Vid->ppSliceList = slot->ppSliceList;
+    slot->p_Vid->iNumOfSlicesAllocated = slot->iNumOfSlicesAllocated;
+    slot->p_Vid->dec_picture = p_Vid->dec_picture;
+    slot->dec_picture = p_Vid->dec_picture;
+
+    init_Deblock(slot->p_Vid, slot->ppSliceList[0]->mb_aff_frame_flag);
+
+    // Initialize slot frame buffers (same as init_picture lines 259-299)
+    if (slot->p_Vid->active_pps->entropy_coding_mode_flag == (Boolean) CAVLC)
+    {
+      memset(slot->p_Vid->nz_coeff[0][0][0], -1, slot->p_Vid->PicSizeInMbs * 48 * sizeof(byte));
+    }
+    {
+      Macroblock *currMB = slot->p_Vid->mb_data;
+      for (int i = 0; i < (int)slot->p_Vid->PicSizeInMbs; ++i) {
+        reset_mbs(currMB++);
+      }
+      if (slot->p_Vid->active_pps->constrained_intra_pred_flag) {
+        for (int i = 0; i < (int)slot->p_Vid->PicSizeInMbs; ++i) {
+          slot->p_Vid->intra_block[i] = 1;
+        }
+      }
+      fast_memset(slot->p_Vid->ipredmode[0], DC_PRED, 16 * slot->p_Vid->FrameHeightInMbs * slot->p_Vid->PicWidthInMbs * sizeof(char));
+    }
+
+    // Initialize slice reference lists
+    for (int i = 0; i < slot->iSliceNumOfCurrPic; i++) {
+      init_slice(slot->p_Vid, slot->ppSliceList[i]);
+    }
+
+    // Create decode job
+    slot->job = f264_threadqueue_job_create(
+      [](void *arg) {
+        auto *s = (FrameWorkerSlot*)arg;
+        for (int i = 0; i < s->iSliceNumOfCurrPic; i++) {
+          decode_slice(s->ppSliceList[i], s->ppSliceList[i]->current_header);
+          s->p_Vid->iNumOfSlicesDecoded++;
+          s->p_Vid->num_dec_mb += s->ppSliceList[i]->num_dec_mb;
+          s->p_Vid->erc_mvperMB += s->ppSliceList[i]->erc_mvperMB;
+        }
+        if (!s->p_Vid->iDeblockMode && (s->p_Vid->bDeblockEnable & (1 << s->dec_picture->used_for_reference))) {
+          DeblockPicture(s->p_Vid, s->dec_picture);
+        }
+        if (s->dec_picture->mb_aff_frame_flag) {
+          MbAffPostProc(s->p_Vid);
+        }
+        if (s->dec_picture->used_for_reference) {
+          pad_dec_picture(s->p_Vid, s->dec_picture);
+        }
+        // Release references to pictures used by this frame
+        for (auto *ref : s->referenced_pics) {
+          free_storable_picture(ref);
+        }
+        s->referenced_pics.clear();
+      },
+      slot
+    );
+
+    slot->referenced_pics.clear();
+    // Hold reference to own dec_picture
+    f264_pic_ref(slot->dec_picture);
+    slot->referenced_pics.push_back(slot->dec_picture);
+
+    // Add dependencies and hold references on all active reference pictures
+    for (int i = 0; i < slot->iSliceNumOfCurrPic; i++) {
+      Slice *s = slot->ppSliceList[i];
+      for (int l = 0; l <= 1; l++) {
+        for (int r = 0; r < s->listXsize[l]; r++) {
+          StorablePicture *ref = s->listX[l][r];
+          if (ref && ref != p_Vid->no_reference_picture) {
+            bool found = false;
+            for (auto *p : slot->referenced_pics) {
+              if (p == ref) { found = true; break; }
+            }
+            if (!found) {
+              f264_pic_ref(ref);
+              slot->referenced_pics.push_back(ref);
+            }
+            if (ref->job) {
+              f264_threadqueue_job_dep_add(slot->job, ref->job);
+            }
+          }
+        }
+      }
+    }
+
+    // Dec picture holds a reference to the job
+    slot->dec_picture->job = f264_threadqueue_copy_ref(slot->job);
+
+    // Submit job
+    f264_threadqueue_submit(p_Vid->thread_queue, slot->job);
+
+    // Store in DPB
+    if (p_Vid->dec_picture->structure == FRAME)
+      p_Vid->last_dec_poc = p_Vid->dec_picture->frame_poc;
+    else if (p_Vid->dec_picture->structure == TOP_FIELD)
+      p_Vid->last_dec_poc = p_Vid->dec_picture->top_poc;
+    else if (p_Vid->dec_picture->structure == BOTTOM_FIELD)
+      p_Vid->last_dec_poc = p_Vid->dec_picture->bottom_poc;
+
+    p_Vid->previous_frame_num = slot->ppSliceList[0]->frame_num;
+
+    store_picture_in_dpb(p_Vid->p_Dpb_layer[0], p_Vid->dec_picture);
+    p_Vid->dec_picture = nullptr;
+    ++(p_Vid->number);
+
+    if (p_Vid->last_has_mmco_5) {
+      p_Vid->pre_frame_num = 0;
+    }
+
+    if (p_Vid->snr->frame_ctr == 0) {
+      gettime(&(p_Vid->start_time));
+    }
+    if (slot->ppSliceList[0]->slice_type == B_SLICE) {
+      ++(p_Vid->Bframe_ctr);
+    }
+    ++(p_Vid->snr->frame_ctr);
+    ++(p_Vid->g_nFrame);
+    if (p_Vid->p_Inp->silent == FALSE) {
+      fprintf(stdout, "Completed Decoding frame %05d.\r", p_Vid->snr->frame_ctr);
+      fflush(stdout);
+    }
+  }
+  else {
+    if (pipeline && p_Vid->thread_queue) {
+      f264_frame_pipeline_flush(pipeline, p_Vid->thread_queue);
+    }
+
     for(iSliceNo=0; iSliceNo<p_Vid->iSliceNumOfCurrPic; iSliceNo++)
     {
       currSlice = ppSliceList[iSliceNo];
@@ -875,15 +1079,16 @@ int decode_one_frame(DecoderParams *pDecoder)
         p_Vid->erc_mvperMB += currSlice->erc_mvperMB;
       }
     }
+
+    if(p_Vid->dec_picture->structure == FRAME)
+      p_Vid->last_dec_poc = p_Vid->dec_picture->frame_poc;
+    else if(p_Vid->dec_picture->structure == TOP_FIELD)
+      p_Vid->last_dec_poc = p_Vid->dec_picture->top_poc;
+    else if(p_Vid->dec_picture->structure == BOTTOM_FIELD)
+      p_Vid->last_dec_poc = p_Vid->dec_picture->bottom_poc;
+    exit_picture(p_Vid, &p_Vid->dec_picture);
+    p_Vid->previous_frame_num = ppSliceList[0]->frame_num;
   }
-  if(p_Vid->dec_picture->structure == FRAME)
-    p_Vid->last_dec_poc = p_Vid->dec_picture->frame_poc;
-  else if(p_Vid->dec_picture->structure == TOP_FIELD)
-    p_Vid->last_dec_poc = p_Vid->dec_picture->top_poc;
-  else if(p_Vid->dec_picture->structure == BOTTOM_FIELD)
-    p_Vid->last_dec_poc = p_Vid->dec_picture->bottom_poc;
-  exit_picture(p_Vid, &p_Vid->dec_picture);
-  p_Vid->previous_frame_num = ppSliceList[0]->frame_num;
   return (iRet);
 }
 

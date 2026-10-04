@@ -48,6 +48,7 @@
 
 #include "global.h"
 #include "annexb.h"
+#include "threading/frame_pipeline.h"
 #include "image.h"
 #include "memalloc.h"
 #include "mc_prediction.h"
@@ -78,7 +79,7 @@ char errortext[ET_SIZE];
 // Prototypes of static functions
 static void Report      (VideoParameters *p_Vid);
 static void init        (VideoParameters *p_Vid);
-static void free_slice  (Slice *currSlice);
+void free_slice         (Slice *currSlice);
 
 void init_frext(VideoParameters *p_Vid);
 
@@ -522,92 +523,97 @@ static void Report(VideoParameters *p_Vid)
     p_log=fopen(string,"a");                    // File exist,just open for appending
   }
 
-  fprintf(p_log,"|%s/%-4s", VERSION, EXT_VERSION);
+  if (p_log)
+  {
+    fprintf(p_log,"|%s/%-4s", VERSION, EXT_VERSION);
 
 #ifdef WIN32
-  _strdate( timebuf );
-  fprintf(p_log,"| %1.5s |",timebuf );
+    _strdate( timebuf );
+    fprintf(p_log,"| %1.5s |",timebuf );
 
-  _strtime( timebuf);
-  fprintf(p_log," % 1.5s |",timebuf);
+    _strtime( timebuf);
+    fprintf(p_log," % 1.5s |",timebuf);
 #else
-  now = time ((time_t *) NULL); // Get the system time and put it into 'now' as 'calender time'
-  time (&now);
-  l_time = localtime (&now);
-  strftime (string, sizeof string, "%d-%b-%Y", l_time);
-  fprintf(p_log,"| %1.5s |",string );
+    now = time ((time_t *) NULL); // Get the system time and put it into 'now' as 'calender time'
+    time (&now);
+    l_time = localtime (&now);
+    strftime (string, sizeof string, "%d-%b-%Y", l_time);
+    fprintf(p_log,"| %1.5s |",string );
 
-  strftime (string, sizeof string, "%H:%M:%S", l_time);
-  fprintf(p_log,"| %1.5s |",string );
+    strftime (string, sizeof string, "%H:%M:%S", l_time);
+    fprintf(p_log,"| %1.5s |",string );
 #endif
 
-  fprintf(p_log,"%20.20s|",p_Inp->infile);
+    fprintf(p_log,"%20.20s|",p_Inp->infile);
 
-  fprintf(p_log,"%3d |",p_Vid->number);
-  fprintf(p_log,"%4dx%-4d|", p_Vid->width, p_Vid->height);
-  fprintf(p_log," %s |", &(yuv_formats[p_Vid->yuv_format][0]));
+    fprintf(p_log,"%3d |",p_Vid->number);
+    fprintf(p_log,"%4dx%-4d|", p_Vid->width, p_Vid->height);
+    fprintf(p_log," %s |", &(yuv_formats[p_Vid->yuv_format][0]));
 
-  if (active_pps)
-  {
-    if (active_pps->entropy_coding_mode_flag == (Boolean) CAVLC)
-      fprintf(p_log," CAVLC|");
-    else
-      fprintf(p_log," CABAC|");
+    if (active_pps)
+    {
+      if (active_pps->entropy_coding_mode_flag == (Boolean) CAVLC)
+        fprintf(p_log," CAVLC|");
+      else
+        fprintf(p_log," CABAC|");
+    }
+
+    fprintf(p_log,"%6.3f|",snr->snr1[0]);
+    fprintf(p_log,"%6.3f|",snr->snr1[1]);
+    fprintf(p_log,"%6.3f|",snr->snr1[2]);
+    fprintf(p_log,"%6.3f|",snr->snra[0]);
+    fprintf(p_log,"%6.3f|",snr->snra[1]);
+    fprintf(p_log,"%6.3f|",snr->snra[2]);
+    fprintf(p_log,"\n");
+    fclose(p_log);
   }
-
-  fprintf(p_log,"%6.3f|",snr->snr1[0]);
-  fprintf(p_log,"%6.3f|",snr->snr1[1]);
-  fprintf(p_log,"%6.3f|",snr->snr1[2]);
-  fprintf(p_log,"%6.3f|",snr->snra[0]);
-  fprintf(p_log,"%6.3f|",snr->snra[1]);
-  fprintf(p_log,"%6.3f|",snr->snra[2]);
-  fprintf(p_log,"\n");
-  fclose(p_log);
 
   snprintf(string, OUTSTRING_SIZE,"%s", DATADECFILE);
   p_log=fopen(string,"a");
-
-  if(p_Vid->Bframe_ctr != 0) // B picture used
+  if (p_log)
   {
-    fprintf(p_log, "%3d %2d %2d %2.2f %2.2f %2.2f %5d "
-      "%2.2f %2.2f %2.2f %5d "
-      "%2.2f %2.2f %2.2f %5d %.3f\n",
-      p_Vid->number, 0, p_Vid->ppSliceList[0]->qp,
-      snr->snr1[0],
-      snr->snr1[1],
-      snr->snr1[2],
-      0,
-      0.0,
-      0.0,
-      0.0,
-      0,
-      snr->snra[0],
-      snr->snra[1],
-      snr->snra[2],
-      0,
-      (double)0.001*p_Vid->tot_time/(p_Vid->number + p_Vid->Bframe_ctr - 1));
+    if(p_Vid->Bframe_ctr != 0) // B picture used
+    {
+      fprintf(p_log, "%3d %2d %2d %2.2f %2.2f %2.2f %5d "
+        "%2.2f %2.2f %2.2f %5d "
+        "%2.2f %2.2f %2.2f %5d %.3f\n",
+        p_Vid->number, 0, p_Vid->ppSliceList[0] ? p_Vid->ppSliceList[0]->qp : 0,
+        snr->snr1[0],
+        snr->snr1[1],
+        snr->snr1[2],
+        0,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        snr->snra[0],
+        snr->snra[1],
+        snr->snra[2],
+        0,
+        (double)0.001*p_Vid->tot_time/(p_Vid->number + p_Vid->Bframe_ctr - 1));
+    }
+    else
+    {
+      fprintf(p_log, "%3d %2d %2d %2.2f %2.2f %2.2f %5d "
+        "%2.2f %2.2f %2.2f %5d "
+        "%2.2f %2.2f %2.2f %5d %.3f\n",
+        p_Vid->number, 0, p_Vid->ppSliceList[0]? p_Vid->ppSliceList[0]->qp: 0,
+        snr->snr1[0],
+        snr->snr1[1],
+        snr->snr1[2],
+        0,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        snr->snra[0],
+        snr->snra[1],
+        snr->snra[2],
+        0,
+        p_Vid->number ? ((double)0.001*p_Vid->tot_time/p_Vid->number) : 0.0);
+    }
+    fclose(p_log);
   }
-  else
-  {
-    fprintf(p_log, "%3d %2d %2d %2.2f %2.2f %2.2f %5d "
-      "%2.2f %2.2f %2.2f %5d "
-      "%2.2f %2.2f %2.2f %5d %.3f\n",
-      p_Vid->number, 0, p_Vid->ppSliceList[0]? p_Vid->ppSliceList[0]->qp: 0,
-      snr->snr1[0],
-      snr->snr1[1],
-      snr->snr1[2],
-      0,
-      0.0,
-      0.0,
-      0.0,
-      0,
-      snr->snra[0],
-      snr->snra[1],
-      snr->snra[2],
-      0,
-      p_Vid->number ? ((double)0.001*p_Vid->tot_time/p_Vid->number) : 0.0);
-  }
-  fclose(p_log);
 }
 
 /*!
@@ -764,7 +770,7 @@ Slice *malloc_slice(InputParameters *p_Inp, VideoParameters *p_Vid)
  *    Input Parameters Slice *currSlice
  ************************************************************************
  */
-static void free_slice(Slice *currSlice)
+void free_slice(Slice *currSlice)
 {
   int i;
 
@@ -1115,6 +1121,12 @@ int OpenDecoder(InputParameters *p_Inp)
   int nthreads = pDecoder->p_Inp->threads > 0 ? pDecoder->p_Inp->threads : f264_g_hardware_flags.logical_cpu_count;
   pDecoder->thread_queue = f264_threadqueue_init(nthreads > 1 ? nthreads : 0);
   pDecoder->p_Vid->thread_queue = pDecoder->thread_queue;
+  pDecoder->frame_pipeline = NULL;
+  if (pDecoder->thread_queue && nthreads > 1) {
+    int num_slots = nthreads > 4 ? 4 : nthreads;
+    if (num_slots < 2) num_slots = 2;
+    pDecoder->frame_pipeline = f264_frame_pipeline_init(num_slots, pDecoder->p_Vid);
+  }
 
   if((strcasecmp(p_Inp->outfile, "\"\"")!=0) && (strlen(p_Inp->outfile)>0))
   {
@@ -1196,6 +1208,13 @@ int FinitDecoder(DecodedPicList **ppDecPicList)
   DecoderParams *pDecoder = p_Dec;
   if(!pDecoder)
     return DEC_GEN_NOERR;
+  if (pDecoder->frame_pipeline && pDecoder->thread_queue) {
+    f264_frame_pipeline_flush((FramePipeline*)pDecoder->frame_pipeline, pDecoder->thread_queue);
+    if (pDecoder->p_Vid->snr->frame_ctr > 0 && pDecoder->p_Vid->tot_time == 0) {
+      gettime(&(pDecoder->p_Vid->end_time));
+      pDecoder->p_Vid->tot_time = timediff(&(pDecoder->p_Vid->start_time), &(pDecoder->p_Vid->end_time));
+    }
+  }
   ClearDecPicList(pDecoder->p_Vid);
   flush_dpb(pDecoder->p_Vid->p_Dpb_layer[0]);
   if (pDecoder->p_Inp->FileFormat == PAR_OF_ANNEXB)
@@ -1215,6 +1234,11 @@ int CloseDecoder()
   DecoderParams *pDecoder = p_Dec;
   if(!pDecoder)
     return DEC_CLOSE_NOERR;
+
+  if (pDecoder->frame_pipeline) {
+    f264_frame_pipeline_free((FramePipeline*)pDecoder->frame_pipeline);
+    pDecoder->frame_pipeline = NULL;
+  }
 
   if (pDecoder->thread_queue) {
     f264_threadqueue_free(pDecoder->thread_queue);

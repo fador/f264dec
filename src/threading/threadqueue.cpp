@@ -84,6 +84,7 @@ static void worker_loop(threadqueue_queue_t *tq)
 
     // Mark done and notify reverse dependencies
     std::vector<threadqueue_job_t*> ready_rdepends;
+    std::vector<threadqueue_job_t*> rdepends_to_release;
     {
       std::unique_lock<std::mutex> job_lock(job->lock);
       job->state = THREADQUEUE_JOB_STATE_DONE;
@@ -96,7 +97,13 @@ static void worker_loop(threadqueue_queue_t *tq)
           rdep->state = THREADQUEUE_JOB_STATE_READY;
           ready_rdepends.push_back(rdep);
         }
+        rdepends_to_release.push_back(rdep);
       }
+      job->rdepends.clear();
+    }
+
+    for (auto *rdep : rdepends_to_release) {
+      f264_threadqueue_free_job(&rdep);
     }
 
     {

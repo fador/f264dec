@@ -30,6 +30,7 @@
 #include "memalloc.h"
 #include "output.h"
 #include "fast_memory.h"
+#include "threading/threadqueue.h"
 
 static void insert_picture_in_dpb    (VideoParameters *p_Vid, FrameStore* fs, StorablePicture* p);
 static int output_one_frame_from_dpb (DecodedPictureBuffer *p_Dpb);
@@ -426,6 +427,8 @@ StorablePicture* alloc_storable_picture(VideoParameters *p_Vid, PictureStructure
   s->imgUV = NULL;
 
   get_mem2Dpel_pad (&(s->imgY), size_y, size_x, p_Vid->iLumaPadY, p_Vid->iLumaPadX);
+  s->cur_imgY = s->imgY;
+  s->ref_count = 1;
   s->iLumaStride = size_x+2*p_Vid->iLumaPadX;
   s->iLumaExpandedHeight = size_y+2*p_Vid->iLumaPadY;
 
@@ -565,6 +568,19 @@ void free_storable_picture(StorablePicture* p)
   int nplane;
   if (p)
   {
+    int prev = f264_pic_unref(p);
+    if (prev > 1)
+    {
+      return;
+    }
+    if (prev <= 0)
+    {
+      return;
+    }
+    if (p->job)
+    {
+      f264_threadqueue_free_job(&p->job);
+    }
     if (p->mv_info)
     {
       free_mem2Dmp(p->mv_info);
