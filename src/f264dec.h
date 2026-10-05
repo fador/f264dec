@@ -97,6 +97,7 @@ typedef struct f264_config {
   int32_t postproc_level;     //!< Postprocessing level [0..100]
   int32_t deblock_enable;     //!< Enable deblocking filter (default: 1)
   int32_t file_format;        //!< Input bitstream format (0 = Annex B)
+  int32_t memory_input;       //!< In-memory input flag (1 = stream via f264_decoder_push, 0 = file)
 } f264_config;
 
 typedef f264_config f264dec_config_t;
@@ -155,6 +156,22 @@ typedef struct f264_api {
   int           (*decoder_flush)(f264_decoder *dec, f264_picture **pic_out);
 
   /**
+   * \brief Push Annex B bitstream chunk into in-memory decoder buffer.
+   * \param dec  Decoder instance
+   * \param data Pointer to bitstream bytes
+   * \param size Number of bytes
+   * \return Bytes pushed on success, or negative error code.
+   */
+  int           (*decoder_push)(f264_decoder *dec, const uint8_t *data, size_t size);
+
+  /**
+   * \brief Consume and retrieve next available decoded picture from output list.
+   * \param dec Decoder instance
+   * \return Pointer to next valid f264_picture, or NULL if no pictures available.
+   */
+  f264_picture *(*decoder_get_picture)(f264_decoder *dec);
+
+  /**
    * \brief Allocate an empty picture container with allocated buffers.
    */
   f264_picture *(*picture_alloc)(int32_t width, int32_t height);
@@ -193,6 +210,8 @@ F264_PUBLIC f264_decoder *   f264_decoder_open(const f264_config *cfg);
 F264_PUBLIC void             f264_decoder_close(f264_decoder *dec);
 F264_PUBLIC int              f264_decoder_decode(f264_decoder *dec, f264_picture **pic_out);
 F264_PUBLIC int              f264_decoder_flush(f264_decoder *dec, f264_picture **pic_out);
+F264_PUBLIC int              f264_decoder_push(f264_decoder *dec, const uint8_t *data, size_t size);
+F264_PUBLIC f264_picture *   f264_decoder_get_picture(f264_decoder *dec);
 
 F264_PUBLIC f264_picture *   f264_picture_alloc(int32_t width, int32_t height);
 F264_PUBLIC f264_picture *   f264_picture_alloc_csp(f264_chroma_format csp, int32_t width, int32_t height);
@@ -213,6 +232,8 @@ F264_PUBLIC int              f264_get_version_revision(void);
 #define f264dec_close              f264_decoder_close
 #define f264dec_decode_frame       f264_decoder_decode
 #define f264dec_flush              f264_decoder_flush
+#define f264dec_push               f264_decoder_push
+#define f264dec_get_picture        f264_decoder_get_picture
 #define f264dec_picture_alloc      f264_picture_alloc
 #define f264dec_picture_alloc_csp  f264_picture_alloc_csp
 #define f264dec_picture_free       f264_picture_free

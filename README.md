@@ -126,6 +126,8 @@ python tests/benchmark.py --decoder build/Release/f264dec.exe --streams-dir test
 
 `f264dec` exposes a normalized C interface modelled after the [Kvazaar](https://github.com/ultravideo/kvazaar) API via `src/f264dec.h`:
 
+### File-Based Decoding
+
 ```c
 #include "f264dec.h"
 
@@ -149,8 +151,49 @@ while (api->decoder_decode(dec, &pic) == F264_OK) {
     }
 }
 
-// 5. Flush and clean up
-api->decoder_flush(dec, &pic);
+// 5. Drain all remaining buffered pictures from DPB
+while (api->decoder_flush(dec, &pic) == F264_OK && pic) {
+    // Process flushed frame
+}
+
+// 6. Clean up
+api->decoder_close(dec);
+api->config_destroy(cfg);
+```
+
+### In-Memory Streaming / Demuxer Decoding
+
+For players demuxing MP4, MKV, AVI, or FLV, Annex B bytes or NALUs can be pushed directly without intermediate files:
+
+```c
+#include "f264dec.h"
+
+const f264_api *api = f264_api_get(8);
+f264_config *cfg = api->config_alloc();
+api->config_init(cfg);
+cfg->memory_input = 1;
+
+f264_decoder *dec = api->decoder_open(cfg);
+
+// Push Annex B data chunks into memory buffer
+api->decoder_push(dec, packet_data, packet_size);
+
+// Decode available pictures
+f264_picture *pic = NULL;
+while (api->decoder_decode(dec, &pic) == F264_OK) {
+    if (pic) {
+        // Process decoded frame
+    }
+}
+
+// Alternatively, consume decoded pictures individually:
+// pic = api->decoder_get_picture(dec);
+
+// Drain DPB at end-of-stream
+while (api->decoder_flush(dec, &pic) == F264_OK && pic) {
+    // Process drained picture
+}
+
 api->decoder_close(dec);
 api->config_destroy(cfg);
 ```

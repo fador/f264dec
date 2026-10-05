@@ -42,14 +42,28 @@ void init_annex_b(ANNEXB_t *annex_b)
   annex_b->is_eof = FALSE;
   annex_b->IsFirstByteStreamNALU = 1;
   annex_b->nextstartcodebytes = 0;
+  annex_b->is_memory_input = 0;
+  annex_b->is_flushed = 0;
+  annex_b->mem_buf = NULL;
+  annex_b->mem_buf_size = 0;
+  annex_b->mem_buf_len = 0;
+  annex_b->mem_read_pos = 0;
 }
 
 void free_annex_b(ANNEXB_t **p_annex_b)
 {
-  free((*p_annex_b)->Buf);
-  (*p_annex_b)->Buf = NULL;
-  free(*p_annex_b);
-  *p_annex_b = NULL;  
+  if (p_annex_b && *p_annex_b)
+  {
+    if ((*p_annex_b)->mem_buf)
+    {
+      free((*p_annex_b)->mem_buf);
+      (*p_annex_b)->mem_buf = NULL;
+    }
+    free((*p_annex_b)->Buf);
+    (*p_annex_b)->Buf = NULL;
+    free(*p_annex_b);
+    *p_annex_b = NULL;  
+  }
 }
 
 /*!
@@ -80,6 +94,16 @@ static inline int getChunk(ANNEXB_t *annex_b)
 */
 static inline byte getfbyte(ANNEXB_t *annex_b)
 {
+  if (annex_b->is_memory_input)
+  {
+    if (annex_b->mem_read_pos >= annex_b->mem_buf_len)
+    {
+      annex_b->is_eof = TRUE;
+      return 0;
+    }
+    return annex_b->mem_buf[annex_b->mem_read_pos++];
+  }
+
   if (0 == annex_b->bytesinbuffer)
   {
     if (0 == getChunk(annex_b))
@@ -321,6 +345,52 @@ void open_annex_b (char *fn, ANNEXB_t *annex_b)
  *    Closes the bit stream file
  ************************************************************************
  */
+void open_annex_b_memory(ANNEXB_t *annex_b)
+{
+  annex_b->BitStreamFile = -1;
+  annex_b->is_memory_input = 1;
+  annex_b->is_flushed = 0;
+  annex_b->is_eof = FALSE;
+  annex_b->bytesinbuffer = 0;
+  annex_b->mem_read_pos = 0;
+  annex_b->mem_buf_len = 0;
+}
+
+int annex_b_push(ANNEXB_t *annex_b, const byte *data, size_t size)
+{
+  if (!annex_b || !data || size == 0) return 0;
+
+  // Compact already consumed data to keep memory usage bounded
+  if (annex_b->mem_read_pos > 0)
+  {
+    size_t remaining = annex_b->mem_buf_len - annex_b->mem_read_pos;
+    if (remaining > 0)
+    {
+      memmove(annex_b->mem_buf, annex_b->mem_buf + annex_b->mem_read_pos, remaining);
+    }
+    annex_b->mem_buf_len = remaining;
+    annex_b->mem_read_pos = 0;
+  }
+
+  if (annex_b->mem_buf_len + size > annex_b->mem_buf_size)
+  {
+    size_t new_cap = (annex_b->mem_buf_size == 0) ? 65536 : annex_b->mem_buf_size * 2;
+    while (new_cap < annex_b->mem_buf_len + size)
+    {
+      new_cap *= 2;
+    }
+    byte *new_buf = (byte *)realloc(annex_b->mem_buf, new_cap);
+    if (!new_buf) return -1;
+    annex_b->mem_buf = new_buf;
+    annex_b->mem_buf_size = new_cap;
+  }
+
+  memcpy(annex_b->mem_buf + annex_b->mem_buf_len, data, size);
+  annex_b->mem_buf_len += size;
+  annex_b->is_eof = FALSE;
+  return (int)size;
+}
+
 void close_annex_b(ANNEXB_t *annex_b)
 {
   if (annex_b->BitStreamFile != -1)
@@ -338,4 +408,8 @@ void reset_annex_b(ANNEXB_t *annex_b)
   annex_b->is_eof = FALSE;
   annex_b->bytesinbuffer = 0;
   annex_b->iobufferread = annex_b->iobuffer;
+  annex_b->mem_read_pos = 0;
+  annex_b->mem_buf_len = 0;
+  annex_b->IsFirstByteStreamNALU = 1;
+  annex_b->nextstartcodebytes = 0;
 }

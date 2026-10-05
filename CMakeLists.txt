@@ -29,6 +29,10 @@ target_include_directories(f264dec_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 add_executable(f264dec src/main.cpp)
 target_link_libraries(f264dec PRIVATE f264dec_lib)
 
+# Memory API test executable
+add_executable(test_memory_api tests/test_memory_api.cpp)
+target_link_libraries(test_memory_api PRIVATE f264dec_lib)
+
 if(UNIX AND NOT APPLE)
   target_link_libraries(f264dec_lib PUBLIC m)
 endif()
@@ -47,5 +51,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams")
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.py"
             --decoder "$<TARGET_FILE:f264dec>"
             --streams-dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams"
+  )
+  add_test(
+    NAME memory_api_test
+    COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.md5"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
 endif()

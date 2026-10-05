@@ -97,6 +97,7 @@ void init_frext(VideoParameters *p_Vid);
 void error(char *text, int code)
 {
   fprintf(stderr, "%s\n", text);
+  fflush(stderr);
   if (p_Dec)
   {
     flush_dpb(p_Dec->p_Vid->p_Dpb_layer[0]);
@@ -1106,6 +1107,7 @@ int OpenDecoder(InputParameters *p_Inp)
   init_time();
 
   pDecoder = p_Dec;
+  pDecoder->p_Vid->dpb_flushed = 0;
   memcpy(pDecoder->p_Inp, p_Inp, sizeof(InputParameters));
   if (pDecoder->p_Inp->poc_scale <= 0) pDecoder->p_Inp->poc_scale = 2;
   if (pDecoder->p_Inp->ref_poc_gap <= 0) pDecoder->p_Inp->ref_poc_gap = 2;
@@ -1155,7 +1157,14 @@ int OpenDecoder(InputParameters *p_Inp)
     pDecoder->p_Vid->p_ref = -1;
 
   malloc_annex_b(pDecoder->p_Vid, &pDecoder->p_Vid->annex_b);
-  open_annex_b(pDecoder->p_Inp->infile, pDecoder->p_Vid->annex_b);
+  if (pDecoder->p_Inp->memory_input || strlen(pDecoder->p_Inp->infile) == 0)
+  {
+    open_annex_b_memory(pDecoder->p_Vid->annex_b);
+  }
+  else
+  {
+    open_annex_b(pDecoder->p_Inp->infile, pDecoder->p_Vid->annex_b);
+  }
   
   // Allocate Slice data struct
   //pDecoder->p_Vid->currentSlice = NULL; //malloc_slice(pDecoder->p_Inp, pDecoder->p_Vid);
@@ -1378,6 +1387,7 @@ int f264_config_init(f264_config *cfg)
   cfg->silent = 0;           // Verbose
   cfg->deblock_enable = 1;
   cfg->file_format = 0;      // PAR_OF_ANNEXB
+  cfg->memory_input = 0;
   return 1;
 }
 
@@ -1410,6 +1420,10 @@ int f264_config_parse(f264_config *cfg, const char *name, const char *value)
   }
   if (strcmp(name, "ref") == 0 || strcmp(name, "reffile") == 0) {
     strncpy(cfg->reffile, value, sizeof(cfg->reffile) - 1);
+    return 1;
+  }
+  if (strcmp(name, "memory_input") == 0) {
+    cfg->memory_input = atoi(value);
     return 1;
   }
   return 0;
@@ -1515,6 +1529,7 @@ f264_decoder * f264_decoder_open(const f264_config *cfg)
   inp.cpuid = cfg->cpuid;
   inp.silent = cfg->silent;
   inp.FileFormat = PAR_OF_ANNEXB;
+  inp.memory_input = cfg->memory_input;
 
   int ret = OpenDecoder(&inp);
   if (ret != DEC_OPEN_NOERR || !p_Dec) {
@@ -1533,22 +1548,61 @@ void f264_decoder_close(f264_decoder *dec)
   CloseDecoder();
 }
 
+int f264_decoder_push(f264_decoder *dec, const uint8_t *data, size_t size)
+{
+  if (!dec || !data || size == 0) return 0;
+  DecoderParams *pDecoder = (DecoderParams *)dec;
+  if (!pDecoder->p_Vid || !pDecoder->p_Vid->annex_b) return -1;
+  return annex_b_push(pDecoder->p_Vid->annex_b, (const byte *)data, size);
+}
+
+f264_picture * f264_decoder_get_picture(f264_decoder *dec)
+{
+  if (!dec) return NULL;
+  DecoderParams *pDecoder = (DecoderParams *)dec;
+  if (!pDecoder->p_Vid) return NULL;
+
+  DecodedPicList *pPic = pDecoder->p_Vid->pDecOuputPic;
+  while (pPic)
+  {
+    if (pPic->bValid)
+    {
+      if (!pDecoder->pic_wrapper)
+      {
+        pDecoder->pic_wrapper = calloc(1, sizeof(f264_picture));
+      }
+      f264_picture *wrap = (f264_picture *)pDecoder->pic_wrapper;
+      fill_f264_picture_from_dec_pic(wrap, pPic);
+      pPic->bValid = 0; // Consume the picture node so it can be reused
+      return wrap;
+    }
+    pPic = pPic->pNext;
+  }
+  return NULL;
+}
+
 int f264_decoder_decode(f264_decoder *dec, f264_picture **pic_out)
 {
   if (!dec) return F264_ERR;
+  if (pic_out) *pic_out = NULL;
+
+  // Check if there is already an unconsumed picture available
+  if (pic_out)
+  {
+    f264_picture *pending = f264_decoder_get_picture(dec);
+    if (pending)
+    {
+      *pic_out = pending;
+      return F264_OK;
+    }
+  }
+
   DecodedPicList *pic_list = NULL;
   int ret = DecodeOneFrame(&pic_list);
 
-  if (pic_out) {
-    *pic_out = NULL;
-    DecoderParams *pDecoder = (DecoderParams *)dec;
-    if (pDecoder && pDecoder->p_Vid && pDecoder->p_Vid->pDecOuputPic && pDecoder->p_Vid->pDecOuputPic->bValid) {
-      f264_picture *wrap = (f264_picture *)pDecoder->pic_wrapper;
-      if (wrap) {
-        fill_f264_picture_from_dec_pic(wrap, pDecoder->p_Vid->pDecOuputPic);
-        *pic_out = wrap;
-      }
-    }
+  if (pic_out)
+  {
+    *pic_out = f264_decoder_get_picture(dec);
   }
 
   if (ret == DEC_SUCCEED) return F264_OK;
@@ -1559,22 +1613,28 @@ int f264_decoder_decode(f264_decoder *dec, f264_picture **pic_out)
 int f264_decoder_flush(f264_decoder *dec, f264_picture **pic_out)
 {
   if (!dec) return F264_ERR;
-  DecodedPicList *pic_list = NULL;
-  int ret = FinitDecoder(&pic_list);
+  if (pic_out) *pic_out = NULL;
 
-  if (pic_out) {
-    *pic_out = NULL;
-    DecoderParams *pDecoder = (DecoderParams *)dec;
-    if (pDecoder && pDecoder->p_Vid && pDecoder->p_Vid->pDecOuputPic && pDecoder->p_Vid->pDecOuputPic->bValid) {
-      f264_picture *wrap = (f264_picture *)pDecoder->pic_wrapper;
-      if (wrap) {
-        fill_f264_picture_from_dec_pic(wrap, pDecoder->p_Vid->pDecOuputPic);
-        *pic_out = wrap;
-      }
-    }
+  DecoderParams *pDecoder = (DecoderParams *)dec;
+  if (!pDecoder || !pDecoder->p_Vid) return F264_ERR;
+
+  // On the first flush call, flush the DPB to output all remaining buffered pictures
+  if (!pDecoder->p_Vid->dpb_flushed)
+  {
+    pDecoder->p_Vid->dpb_flushed = 1;
+    DecodedPicList *pic_list = NULL;
+    FinitDecoder(&pic_list);
   }
 
-  return (ret == DEC_GEN_NOERR) ? F264_OK : F264_ERR;
+  // Drain next picture from output list
+  f264_picture *pending = f264_decoder_get_picture(dec);
+  if (pending)
+  {
+    if (pic_out) *pic_out = pending;
+    return F264_OK;
+  }
+
+  return F264_EOS;
 }
 
 static const f264_api g_f264_api = {
@@ -1586,6 +1646,8 @@ static const f264_api g_f264_api = {
   f264_decoder_close,
   f264_decoder_decode,
   f264_decoder_flush,
+  f264_decoder_push,
+  f264_decoder_get_picture,
   f264_picture_alloc,
   f264_picture_alloc_csp,
   f264_picture_free

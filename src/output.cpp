@@ -352,9 +352,6 @@ static void write_out_picture(VideoParameters *p_Vid, StorablePicture *p, int p_
 
   //printf ("write frame size: %dx%d\n", p->size_x-crop_left-crop_right,p->size_y-crop_top-crop_bottom );
 
-  // We need to further cleanup this function
-  if (p_out == -1)
-    return;
 
 
 
@@ -472,15 +469,18 @@ static void write_out_picture(VideoParameters *p_Vid, StorablePicture *p, int p_
       buf = (unsigned char*)malloc (p->size_x*p->size_y*symbol_size_in_bytes);
       p_Vid->img2buf (p->imgUV[0], buf, p->size_x/2, p->size_y/2, symbol_size_in_bytes, crop_left/2, crop_right/2, crop_top/2, crop_bottom/2, pDecPic->iYBufStride/2);
 
-      ret = write(p_out, buf, symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2 );
-      if (ret != (symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2))
+      if (p_out >= 0)
       {
-        error ("write_out_picture: error writing to YUV file", 500);
-      }
-      ret = write(p_out, buf, symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2 );
-      if (ret != (symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2))
-      {
-        error ("write_out_picture: error writing to YUV file", 500);
+        ret = write(p_out, buf, symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2 );
+        if (ret != (symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2))
+        {
+          error ("write_out_picture: error writing to YUV file", 500);
+        }
+        ret = write(p_out, buf, symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2 );
+        if (ret != (symbol_size_in_bytes * (p->size_y-crop_bottom-crop_top)/2 * (p->size_x-crop_right-crop_left)/2))
+        {
+          error ("write_out_picture: error writing to YUV file", 500);
+        }
       }
       free(buf);
       free_mem3Dpel(p->imgUV);
@@ -489,8 +489,7 @@ static void write_out_picture(VideoParameters *p_Vid, StorablePicture *p, int p_
   }
 
   //free(buf);
- if(p_out >=0)
-   pDecPic->bValid = 0;
+
 
   //  fsync(p_out);
 }

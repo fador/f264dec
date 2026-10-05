@@ -906,6 +906,7 @@ typedef struct video_par
   struct threadqueue_queue_t *thread_queue;
   void (*row_done_cb)(void *ctx, int mb_row);  //!< optional: called after each fully decoded MB row
   void *row_done_ctx;
+  int dpb_flushed;
 } VideoParameters;
 
 
@@ -962,6 +963,7 @@ typedef struct inp_par
   int dpb_plus[2];
   int threads;                                //!< Number of worker threads for multithreading (0=auto)
   int cpuid;                                  //!< 1=detect SIMD (AVX2/SSE2), 0=disable SIMD (generic C++ only)
+  int memory_input;                           //!< 1=in-memory input stream via f264_decoder_push
 } InputParameters;
 
 typedef struct old_slice_par
