@@ -466,161 +466,19 @@ void init_frext(VideoParameters *p_Vid)  //!< video parameters
  */
 static void Report(VideoParameters *p_Vid)
 {
-  static const char yuv_formats[4][4]= { {"400"}, {"420"}, {"422"}, {"444"} };
-  pic_parameter_set_rbsp_t *active_pps = p_Vid->active_pps;
-  InputParameters *p_Inp = p_Vid->p_Inp;
-  SNRParameters   *snr   = p_Vid->snr;
-#define OUTSTRING_SIZE 255
-  char string[OUTSTRING_SIZE];
-  FILE *p_log;
+  if (!p_Vid || !p_Vid->p_Inp || p_Vid->p_Inp->silent)
+    return;
 
-#ifndef WIN32
-  time_t  now;
-  struct tm *l_time;
-#else
-  char timebuf[128];
-#endif
+  SNRParameters *snr = p_Vid->snr;
+  p_Vid->tot_time = timenorm(p_Vid->tot_time);
 
-  // normalize time
-  p_Vid->tot_time  = timenorm(p_Vid->tot_time);
-
-  if (p_Inp->silent == FALSE)
-  {
-    fprintf(stdout,"-------------------- Average SNR all frames ------------------------------\n");
-    fprintf(stdout," SNR Y(dB)           : %5.2f\n",snr->snra[0]);
-    fprintf(stdout," SNR U(dB)           : %5.2f\n",snr->snra[1]);
-    fprintf(stdout," SNR V(dB)           : %5.2f\n",snr->snra[2]);
-    fprintf(stdout," Total decoding time : %.3f sec (%.3f fps)[%d frm/%" FORMAT_OFF_T " ms]\n",p_Vid->tot_time*0.001,(snr->frame_ctr ) * 1000.0 / p_Vid->tot_time, snr->frame_ctr, p_Vid->tot_time);
-    fprintf(stdout,"--------------------------------------------------------------------------\n");
-    fprintf(stdout," Exit JM %s decoder, ver %s ",JM, VERSION);
-    fprintf(stdout,"\n");
-  }
-  else
-  {
-    fprintf(stdout,"\n----------------------- Decoding Completed -------------------------------\n");
-    fprintf(stdout," Total decoding time : %.3f sec (%.3f fps)[%d frm/%" FORMAT_OFF_T "  ms]\n",p_Vid->tot_time*0.001, (snr->frame_ctr) * 1000.0 / p_Vid->tot_time, snr->frame_ctr, p_Vid->tot_time);
-    fprintf(stdout,"--------------------------------------------------------------------------\n");
-    fprintf(stdout," Exit JM %s decoder, ver %s ",JM, VERSION);
-    fprintf(stdout,"\n");
-  }
-
-  // write to log file
-  fprintf(stdout," Output status file                     : %s \n",LOGFILE);
-  snprintf(string, OUTSTRING_SIZE, "%s", LOGFILE);
-
-  if ((p_log=fopen(string,"r"))==0)                    // check if file exist
-  {
-    if ((p_log=fopen(string,"a"))==0)
-    {
-      snprintf(errortext, ET_SIZE, "Error open file %s for appending",string);
-      error(errortext, 500);
-    }
-    else                                              // Create header to new file
-    {
-      fprintf(p_log," -------------------------------------------------------------------------------------------------------------------\n");
-      fprintf(p_log,"|  Decoder statistics. This file is made first time, later runs are appended               |\n");
-      fprintf(p_log," ------------------------------------------------------------------------------------------------------------------- \n");
-      fprintf(p_log,"|   ver  | Date  | Time  |    Sequence        |#Img| Format  | YUV |Coding|SNRY 1|SNRU 1|SNRV 1|SNRY N|SNRU N|SNRV N|\n");
-      fprintf(p_log," -------------------------------------------------------------------------------------------------------------------\n");
-    }
-  }
-  else
-  {
-    fclose(p_log);
-    p_log=fopen(string,"a");                    // File exist,just open for appending
-  }
-
-  if (p_log)
-  {
-    fprintf(p_log,"|%s/%-4s", VERSION, EXT_VERSION);
-
-#ifdef WIN32
-    _strdate( timebuf );
-    fprintf(p_log,"| %1.5s |",timebuf );
-
-    _strtime( timebuf);
-    fprintf(p_log," % 1.5s |",timebuf);
-#else
-    now = time ((time_t *) NULL); // Get the system time and put it into 'now' as 'calender time'
-    time (&now);
-    l_time = localtime (&now);
-    strftime (string, sizeof string, "%d-%b-%Y", l_time);
-    fprintf(p_log,"| %1.5s |",string );
-
-    strftime (string, sizeof string, "%H:%M:%S", l_time);
-    fprintf(p_log,"| %1.5s |",string );
-#endif
-
-    fprintf(p_log,"%20.20s|",p_Inp->infile);
-
-    fprintf(p_log,"%3d |",p_Vid->number);
-    fprintf(p_log,"%4dx%-4d|", p_Vid->width, p_Vid->height);
-    fprintf(p_log," %s |", &(yuv_formats[p_Vid->yuv_format][0]));
-
-    if (active_pps)
-    {
-      if (active_pps->entropy_coding_mode_flag == (Boolean) CAVLC)
-        fprintf(p_log," CAVLC|");
-      else
-        fprintf(p_log," CABAC|");
-    }
-
-    fprintf(p_log,"%6.3f|",snr->snr1[0]);
-    fprintf(p_log,"%6.3f|",snr->snr1[1]);
-    fprintf(p_log,"%6.3f|",snr->snr1[2]);
-    fprintf(p_log,"%6.3f|",snr->snra[0]);
-    fprintf(p_log,"%6.3f|",snr->snra[1]);
-    fprintf(p_log,"%6.3f|",snr->snra[2]);
-    fprintf(p_log,"\n");
-    fclose(p_log);
-  }
-
-  snprintf(string, OUTSTRING_SIZE,"%s", DATADECFILE);
-  p_log=fopen(string,"a");
-  if (p_log)
-  {
-    if(p_Vid->Bframe_ctr != 0) // B picture used
-    {
-      fprintf(p_log, "%3d %2d %2d %2.2f %2.2f %2.2f %5d "
-        "%2.2f %2.2f %2.2f %5d "
-        "%2.2f %2.2f %2.2f %5d %.3f\n",
-        p_Vid->number, 0, p_Vid->ppSliceList[0] ? p_Vid->ppSliceList[0]->qp : 0,
-        snr->snr1[0],
-        snr->snr1[1],
-        snr->snr1[2],
-        0,
-        0.0,
-        0.0,
-        0.0,
-        0,
-        snr->snra[0],
-        snr->snra[1],
-        snr->snra[2],
-        0,
-        (double)0.001*p_Vid->tot_time/(p_Vid->number + p_Vid->Bframe_ctr - 1));
-    }
-    else
-    {
-      fprintf(p_log, "%3d %2d %2d %2.2f %2.2f %2.2f %5d "
-        "%2.2f %2.2f %2.2f %5d "
-        "%2.2f %2.2f %2.2f %5d %.3f\n",
-        p_Vid->number, 0, p_Vid->ppSliceList[0]? p_Vid->ppSliceList[0]->qp: 0,
-        snr->snr1[0],
-        snr->snr1[1],
-        snr->snr1[2],
-        0,
-        0.0,
-        0.0,
-        0.0,
-        0,
-        snr->snra[0],
-        snr->snra[1],
-        snr->snra[2],
-        0,
-        p_Vid->number ? ((double)0.001*p_Vid->tot_time/p_Vid->number) : 0.0);
-    }
-    fclose(p_log);
-  }
+  fprintf(stdout,"-------------------- Average SNR all frames ------------------------------\n");
+  fprintf(stdout," SNR Y(dB)           : %5.2f\n",snr->snra[0]);
+  fprintf(stdout," SNR U(dB)           : %5.2f\n",snr->snra[1]);
+  fprintf(stdout," SNR V(dB)           : %5.2f\n",snr->snra[2]);
+  fprintf(stdout," Total decoding time : %.3f sec (%.3f fps)[%d frm/%" FORMAT_OFF_T " ms]\n",p_Vid->tot_time*0.001,(snr->frame_ctr ) * 1000.0 / p_Vid->tot_time, snr->frame_ctr, p_Vid->tot_time);
+  fprintf(stdout,"--------------------------------------------------------------------------\n");
+  fprintf(stdout," Exit JM %s decoder, ver %s\n",JM, VERSION);
 }
 
 /*!
@@ -1065,9 +923,10 @@ void ClearDecPicList(VideoParameters *p_Vid)
   }
 }
 
-DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList *pDecPicList, int b3D, int view_id)
+DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList **ppDecPicList, int b3D, int view_id)
 {
-  DecodedPicList *pPic = pDecPicList, *pPrior = NULL;
+  if (!ppDecPicList) return NULL;
+  DecodedPicList *pPic = *ppDecPicList, *pPrior = NULL;
   if(b3D)
   {
     while(pPic && (pPic->bValid &(1<<view_id)))
@@ -1091,6 +950,10 @@ DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList *pDecPicList, int
     if (pPrior)
     {
       pPrior->pNext = pPic;
+    }
+    else
+    {
+      *ppDecPicList = pPic;
     }
   }
 
@@ -1116,6 +979,7 @@ int OpenDecoder(InputParameters *p_Inp)
 
   pDecoder = p_Dec;
   pDecoder->p_Vid->dpb_flushed = 0;
+  pDecoder->p_Vid->dec_eos_reached = 0;
   memcpy(pDecoder->p_Inp, p_Inp, sizeof(InputParameters));
   if (pDecoder->p_Inp->poc_scale <= 0) pDecoder->p_Inp->poc_scale = 2;
   if (pDecoder->p_Inp->ref_poc_gap <= 0) pDecoder->p_Inp->ref_poc_gap = 2;
@@ -1610,6 +1474,9 @@ int f264_decoder_decode(f264_decoder *dec, f264_picture **pic_out)
   if (!dec) return F264_ERR;
   if (pic_out) *pic_out = NULL;
 
+  DecoderParams *pDecoder = (DecoderParams *)dec;
+  if (!pDecoder || !pDecoder->p_Vid) return F264_ERR;
+
   // Check if there is already an unconsumed picture available
   if (pic_out)
   {
@@ -1621,12 +1488,27 @@ int f264_decoder_decode(f264_decoder *dec, f264_picture **pic_out)
     }
   }
 
+  // If EOS was already reached, do not call DecodeOneFrame again
+  if (pDecoder->p_Vid->dec_eos_reached)
+  {
+    return F264_EOS;
+  }
+
   DecodedPicList *pic_list = NULL;
   int ret = DecodeOneFrame(&pic_list);
+
+  if (ret == DEC_EOS)
+  {
+    pDecoder->p_Vid->dec_eos_reached = 1;
+  }
 
   if (pic_out)
   {
     *pic_out = f264_decoder_get_picture(dec);
+    if (*pic_out != NULL)
+    {
+      return F264_OK;
+    }
   }
 
   if (ret == DEC_SUCCEED) return F264_OK;

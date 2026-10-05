@@ -156,7 +156,9 @@ typedef struct f264_api {
    *                 Plane pointers (y, u, v) alias internal decoder memory valid until
    *                 the next call to decoder_decode, decoder_get_picture, or decoder_flush.
    *                 Copy pixels if needed across iterations.
-   * \return F264_OK on success, F264_EOS at end of stream, or negative error code.
+   * \return F264_OK on success (returns F264_OK whenever a decoded picture is ready,
+   *         including the final frame), F264_EOS when the bitstream is exhausted
+   *         and no picture was produced, or negative error code.
    * \note When using memory_input, one access unit of lookahead is required to detect
    *       picture boundaries (the decoder must see the start of the next picture before
    *       emitting the current one).

@@ -907,6 +907,7 @@ typedef struct video_par
   void (*row_done_cb)(void *ctx, int mb_row);  //!< optional: called after each fully decoded MB row
   void *row_done_ctx;
   int dpb_flushed;
+  int dec_eos_reached;
 } VideoParameters;
 
 
@@ -1026,7 +1027,7 @@ extern void make_frame_picture_JV( VideoParameters *p_Vid );
 
 extern void FreeDecPicList ( DecodedPicList *pDecPicList );
 extern void ClearDecPicList( VideoParameters *p_Vid );
-extern DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList *pDecPicList, int b3D, int view_id);
+extern DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList **ppDecPicList, int b3D, int view_id);
 extern Slice *malloc_slice( InputParameters *p_Inp, VideoParameters *p_Vid );
 extern void copy_slice_info ( Slice *currSlice, OldSliceParams *p_old_slice );
 extern void OpenOutputFiles(VideoParameters *p_Vid, int view0_id, int view1_id);
