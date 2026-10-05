@@ -42,6 +42,7 @@
 #include "nalu.h"
 #include "parset.h"
 #include "header.h"
+#include "h264decoder.h"
 
 #include "sei.h"
 #include "output.h"
@@ -70,6 +71,9 @@ static inline void reset_mbs(Macroblock *currMB)
   currMB->slice_nr = -1; 
   currMB->ei_flag  =  1;
   currMB->dpl_flag =  0;
+  currMB->p_Slice  = NULL;
+  currMB->DFDisableIdc = 1;
+  currMB->DeblockCall = 0;
 }
 
 static void setup_buffers(VideoParameters *p_Vid, int layer_id)
@@ -875,6 +879,10 @@ int decode_one_frame(DecoderParams *pDecoder)
     currSlice->is_reset_coeff_cr = FALSE;
 
     current_header = read_new_slice(currSlice);
+    if (current_header == EOS && p_Vid->iSliceNumOfCurrPic == 0)
+    {
+      break;
+    }
     //init;
     currSlice->current_header = current_header;
 
@@ -921,20 +929,33 @@ int decode_one_frame(DecoderParams *pDecoder)
     }
     else
     {
-      if(ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->mb_aff_frame_flag)
-       ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->end_mb_nr_plus1 = p_Vid->FrameSizeInMbs/2;
-      else
-       ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->end_mb_nr_plus1 = p_Vid->FrameSizeInMbs/(1+ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->field_pic_flag);
-       p_Vid->newframe = 1;
-       currSlice->current_slice_nr = 0;
-       //keep it in currentslice;
-       ppSliceList[p_Vid->iSliceNumOfCurrPic] = p_Vid->pNextSlice;
-       p_Vid->pNextSlice = currSlice; 
+      if (p_Vid->iSliceNumOfCurrPic > 0)
+      {
+        if(ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->mb_aff_frame_flag)
+         ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->end_mb_nr_plus1 = p_Vid->FrameSizeInMbs/2;
+        else
+         ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->end_mb_nr_plus1 = p_Vid->FrameSizeInMbs/(1+ppSliceList[p_Vid->iSliceNumOfCurrPic-1]->field_pic_flag);
+      }
+      if (current_header == SOP)
+      {
+        p_Vid->newframe = 1;
+        currSlice->current_slice_nr = 0;
+        //keep it in currentslice;
+        ppSliceList[p_Vid->iSliceNumOfCurrPic] = p_Vid->pNextSlice;
+        p_Vid->pNextSlice = currSlice; 
+      }
     }
 
-    copy_slice_info(currSlice, p_Vid->old_slice);
+    if (current_header != EOS)
+    {
+      copy_slice_info(currSlice, p_Vid->old_slice);
+    }
   }
   iRet = current_header;
+  if (p_Vid->iSliceNumOfCurrPic == 0)
+  {
+    return (current_header == EOS) ? EOS : DEC_ERRMASK;
+  }
   init_picture_decoding(p_Vid);
 
   auto *pipeline = (FramePipeline*)pDecoder->frame_pipeline;
@@ -1100,9 +1121,12 @@ int decode_one_frame(DecoderParams *pDecoder)
 
     // Row-level overlap: reference frames publish rows as they become final,
     // so following frames do not have to wait for the whole job to finish.
+    // Only P-frames can track rows and be row-tracked, because B-frames require
+    // bidirectional references and access full-frame colocated motion vectors.
     const bool track_rows = pipeline->row_overlap &&
                             slot->dec_picture->used_for_reference != 0 &&
-                            slot->iSliceNumOfCurrPic == 1;
+                            slot->iSliceNumOfCurrPic == 1 &&
+                            slot->ppSliceList[0]->slice_type == P_SLICE;
     slot->dec_picture->row_tracked = track_rows ? 1 : 0;
     std::atomic_ref<int>(slot->dec_picture->progress_rows).store(track_rows ? 0 : INT_MAX, std::memory_order_release);
 
@@ -1122,8 +1146,9 @@ int decode_one_frame(DecoderParams *pDecoder)
               slot->referenced_pics.push_back(ref);
             }
             if (ref->job) {
-              // Row-tracked references are synchronized dynamically in motion compensation
-              if (!ref->row_tracked)
+              // Row-tracked references are only dynamically synchronized during motion compensation of P-frames.
+              // B-frames need full references (especially for temporal direct colocated MVs).
+              if (!ref->row_tracked || slot->ppSliceList[0]->slice_type != P_SLICE)
                 f264_threadqueue_job_dep_add(slot->job, ref->job);
             }
           }
@@ -1584,21 +1609,19 @@ int read_new_slice(Slice *currSlice)
   int BitsUsedByHeader;
   Bitstream *currStream = NULL;
 
-  static NALU_t *pending_nalu = NULL;
-
   int slice_id_a, slice_id_b, slice_id_c;
 
   for (;;)
   {
-    if (!pending_nalu)
+    if (!p_Vid->pending_nalu)
     {
-      if (0 == read_next_nalu(p_Vid, nalu))
+      if (read_next_nalu(p_Vid, nalu) <= 0)
         return EOS;
     }
     else
     {
-      nalu = pending_nalu;
-      pending_nalu = NULL;
+      nalu = p_Vid->pending_nalu;
+      p_Vid->pending_nalu = NULL;
     }
 
 
@@ -1752,7 +1775,7 @@ process_nalu:
         error ("received data partition with CABAC, this is not allowed", 500);
 
       // continue with reading next DP
-      if (0 == read_next_nalu(p_Vid, nalu))
+      if (read_next_nalu(p_Vid, nalu) <= 0)
         return current_header;
 
       if ( NALU_TYPE_DPB == nalu->nal_unit_type)
@@ -1781,7 +1804,7 @@ process_nalu:
             read_ue_v("NALU: DP_B redundant_pic_cnt", currStream, &p_Dec->UsedBits);
 
           // we're finished with DP_B, so let's continue with next DP
-          if (0 == read_next_nalu(p_Vid, nalu))
+          if (read_next_nalu(p_Vid, nalu) <= 0)
             return current_header;
         }
       }
@@ -1816,7 +1839,7 @@ process_nalu:
       else
       {
         currSlice->dpC_NotPresent =1;
-        pending_nalu = nalu;
+        p_Vid->pending_nalu = nalu;
       }
 
       // check if we read anything else than the expected partitions
@@ -2272,6 +2295,8 @@ void init_old_slice(OldSliceParams *p_old_slice)
 
 void copy_slice_info(Slice *currSlice, OldSliceParams *p_old_slice)
 {
+  if (!currSlice || !currSlice->p_Vid || !currSlice->p_Vid->active_sps)
+    return;
   VideoParameters *p_Vid = currSlice->p_Vid;
 
   p_old_slice->pps_id         = currSlice->pic_parameter_set_id;

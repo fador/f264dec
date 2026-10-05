@@ -19,17 +19,24 @@
 
 static const int IOBUFFERSIZE = 512*1024; //65536;
 
-void malloc_annex_b(VideoParameters *p_Vid, ANNEXB_t **p_annex_b)
+int malloc_annex_b(VideoParameters *p_Vid, ANNEXB_t **p_annex_b)
 {
-  if ( ((*p_annex_b) = (ANNEXB_t *) calloc(1, sizeof(ANNEXB_t))) == NULL)
+  if (!p_annex_b) return -1;
+  if (((*p_annex_b) = (ANNEXB_t *) calloc(1, sizeof(ANNEXB_t))) == NULL)
   {
     snprintf(errortext, ET_SIZE, "Memory allocation for Annex_B file failed");
-    error(errortext,100);
+    error(errortext, 100);
+    return -1;
   }
+  init_annex_b(*p_annex_b);
   if (((*p_annex_b)->Buf = (byte*) malloc(p_Vid->nalu->max_size)) == NULL)
   {
     error("malloc_annex_b: Buf", 101);
+    free(*p_annex_b);
+    *p_annex_b = NULL;
+    return -1;
   }
+  return 0;
 }
 
 
@@ -316,26 +323,33 @@ int get_annex_b_NALU (VideoParameters *p_Vid, NALU_t *nalu, ANNEXB_t *annex_b)
  *    none
  ************************************************************************
  */
-void open_annex_b (char *fn, ANNEXB_t *annex_b)
+int open_annex_b (char *fn, ANNEXB_t *annex_b)
 {
+  if (!annex_b) return -1;
   if (NULL != annex_b->iobuffer)
   {
-    error ("open_annex_b: tried to open Annex B file twice",500);
+    error ("open_annex_b: tried to open Annex B file twice", 500);
+    return -1;
   }
   if ((annex_b->BitStreamFile = open(fn, OPENFLAGS_READ)) == -1)
   {
     snprintf (errortext, ET_SIZE, "Cannot open Annex B ByteStream file '%s'", fn);
-    error(errortext,500);
+    error(errortext, 500);
+    return -1;
   }
 
   annex_b->iIOBufferSize = IOBUFFERSIZE * sizeof (byte);
   annex_b->iobuffer = (byte*) malloc (annex_b->iIOBufferSize);
   if (NULL == annex_b->iobuffer)
   {
-    error ("open_annex_b: cannot allocate IO buffer",500);
+    error ("open_annex_b: cannot allocate IO buffer", 500);
+    close(annex_b->BitStreamFile);
+    annex_b->BitStreamFile = -1;
+    return -1;
   }
   annex_b->is_eof = FALSE;
   getChunk(annex_b);
+  return 0;
 }
 
 

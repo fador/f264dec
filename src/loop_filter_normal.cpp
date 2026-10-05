@@ -424,7 +424,7 @@ static void edge_loop_luma_ver(ColorPlane pl, imgpel** Img, byte *Strength, Macr
 
   Macroblock *MbP = get_non_aff_neighbor_luma(MbQ, edge - 1, 0);
 
-  if (MbP || (MbQ->DFDisableIdc== 0))
+  if (MbP && MbP->slice_nr >= 0)
   {
     uint32_t str32;
     memcpy(&str32, Strength, sizeof(str32));
@@ -546,7 +546,7 @@ static void edge_loop_luma_hor(ColorPlane pl, imgpel** Img, byte *Strength, Macr
   int ypos = (edge < MB_BLOCK_SIZE ? edge - 1: 0);
   Macroblock *MbP = get_non_aff_neighbor_luma(MbQ, 0, ypos); 
 
-  if (MbP || (MbQ->DFDisableIdc== 0))
+  if (MbP && MbP->slice_nr >= 0)
   {
     uint32_t str32;
     memcpy(&str32, Strength, sizeof(str32));
@@ -610,7 +610,7 @@ static void edge_loop_chroma_ver(imgpel** Img, byte *Strength, Macroblock *MbQ, 
 
   Macroblock *MbP = get_non_aff_neighbor_chroma(MbQ,xQ,yQ,block_width,block_height); 
 
-  if (MbP || (MbQ->DFDisableIdc == 0))
+  if (MbP && MbP->slice_nr >= 0)
   {
     uint32_t str32;
     memcpy(&str32, Strength, sizeof(str32));
@@ -702,7 +702,7 @@ static void edge_loop_chroma_hor(imgpel** Img, byte *Strength, Macroblock *MbQ, 
 
   Macroblock *MbP = get_non_aff_neighbor_chroma(MbQ,xQ,yQ,block_width,block_height);
 
-  if (MbP || (MbQ->DFDisableIdc == 0))
+  if (MbP && MbP->slice_nr >= 0)
   {
     uint32_t str32;
     memcpy(&str32, Strength, sizeof(str32));
@@ -1259,8 +1259,8 @@ static void perform_db_normal(VideoParameters *p_Vid, StorablePicture *p, int Mb
 {
   Macroblock   *MbQ = &(p_Vid->mb_data[MbQAddr]) ; // current Mb
 
-  // return, if filter is disabled
-  if (MbQ->DFDisableIdc == 1) 
+  // return, if filter is disabled or MB was not decoded
+  if (MbQ->DFDisableIdc == 1 || MbQ->slice_nr < 0 || !MbQ->p_Slice) 
   {
     MbQ->DeblockCall = 0;
   }
@@ -1284,8 +1284,8 @@ static void get_db_strength_normal(VideoParameters *p_Vid, StorablePicture *p, i
 {
   Macroblock   *MbQ = &(p_Vid->mb_data[MbQAddr]) ; // current Mb
 
-  // return, if filter is disabled
-  if (MbQ->DFDisableIdc == 1) 
+  // return, if filter is disabled or MB was not decoded
+  if (MbQ->DFDisableIdc == 1 || MbQ->slice_nr < 0 || !MbQ->p_Slice) 
   {
     MbQ->DeblockCall = 0;
   }

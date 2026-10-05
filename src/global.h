@@ -837,6 +837,7 @@ typedef struct video_par
   DecodedPicList *pDecOuputPic;
   int iDeblockMode;  //0: deblock in picture, 1: deblock in slice;
   struct nalu_t *nalu;
+  struct nalu_t *pending_nalu;
   int iLumaPadX;
   int iLumaPadY;
   int iChromaPadX;

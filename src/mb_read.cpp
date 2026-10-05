@@ -465,6 +465,9 @@ static inline void reset_mbs(Macroblock *currMB)
   currMB->slice_nr = -1; 
   currMB->ei_flag  =  1;
   currMB->dpl_flag =  0;
+  currMB->p_Slice  = NULL;
+  currMB->DFDisableIdc = 1;
+  currMB->DeblockCall = 0;
 }
 
 static inline void reset_mv_info(PicMotionParams *mv_info, int slice_no)

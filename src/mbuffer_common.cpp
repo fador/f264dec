@@ -723,9 +723,12 @@ void get_smallest_poc(DecodedPictureBuffer *p_Dpb, int *poc,int * pos)
 {
   uint32 i;
 
-  if (p_Dpb->used_size<1)
+  if (!p_Dpb || p_Dpb->used_size < 1)
   {
-    error("Cannot determine smallest POC, DPB empty.",150);
+    error("Cannot determine smallest POC, DPB empty.", 150);
+    *pos = -1;
+    *poc = INT_MAX;
+    return;
   }
 
   *pos=-1;

@@ -271,5 +271,69 @@ int main(int argc, char **argv) {
     }
 
     std::cout << "SUCCESS: In-memory push and drain verified bit-exact!" << std::endl;
+
+    // --- Robustness Tests ---
+    std::cout << "\nRunning robustness tests..." << std::endl;
+
+    // 1. Error callback and non-existent input file
+    struct ErrorCollector {
+        int call_count = 0;
+        int last_code = 0;
+        std::string last_msg;
+    } err_collector;
+
+    auto err_cb = [](void *user_data, int code, const char *msg) {
+        auto *collector = static_cast<ErrorCollector *>(user_data);
+        collector->call_count++;
+        collector->last_code = code;
+        collector->last_msg = msg ? msg : "";
+    };
+
+    f264_config *bad_cfg = api->config_alloc();
+    bad_cfg->memory_input = 0;
+    std::strncpy(bad_cfg->infile, "non_existent_stream_file_987654.264", sizeof(bad_cfg->infile) - 1);
+    bad_cfg->silent = 1;
+    bad_cfg->error_cb = err_cb;
+    bad_cfg->error_cb_user_data = &err_collector;
+
+    f264_decoder *bad_dec = api->decoder_open(bad_cfg);
+    if (bad_dec != nullptr) {
+        std::cerr << "FAIL: decoder_open with non-existent file should return NULL!\n";
+        api->decoder_close(bad_dec);
+        api->config_destroy(bad_cfg);
+        return 1;
+    }
+    if (err_collector.call_count == 0) {
+        std::cerr << "FAIL: error_cb was not called on file open error!\n";
+        api->config_destroy(bad_cfg);
+        return 1;
+    }
+    std::cout << "Verified non-existent file handling: error_cb invoked with code " 
+              << err_collector.last_code << " (\"" << err_collector.last_msg << "\")" << std::endl;
+    api->config_destroy(bad_cfg);
+
+    // 2. Verify decoder can be opened cleanly immediately after a failed open
+    f264_config *recov_cfg = api->config_alloc();
+    recov_cfg->memory_input = 1;
+    recov_cfg->silent = 1;
+    f264_decoder *recov_dec = api->decoder_open(recov_cfg);
+    if (!recov_dec) {
+        std::cerr << "FAIL: Failed to open decoder after previous failed open (state not cleanly reset)\n";
+        api->config_destroy(recov_cfg);
+        return 1;
+    }
+    std::cout << "Verified decoder open recovery after failed open." << std::endl;
+
+    // 3. Corrupt bitstream pushed to in-memory decoder: must not crash or exit
+    uint8_t garbage[64] = {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0};
+    api->decoder_push(recov_dec, garbage, sizeof(garbage));
+    f264_picture *dummy_pic = nullptr;
+    int corrupt_ret = api->decoder_decode(recov_dec, &dummy_pic);
+    std::cout << "Verified corrupt stream decode: returned code " << corrupt_ret << " (graceful handling, no crash or exit)" << std::endl;
+
+    api->decoder_close(recov_dec);
+    api->config_destroy(recov_cfg);
+
+    std::cout << "ALL ROBUSTNESS TESTS PASSED!" << std::endl;
     return 0;
 }

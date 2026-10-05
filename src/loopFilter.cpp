@@ -374,8 +374,8 @@ static void get_db_strength(VideoParameters *p_Vid, StorablePicture *p, int MbQA
 {
   Macroblock   *MbQ = &(p_Vid->mb_data[MbQAddr]) ; // current Mb
 
-  // return, if filter is disabled
-  if (MbQ->DFDisableIdc == 1) 
+  // return, if filter is disabled or MB was not decoded
+  if (MbQ->DFDisableIdc == 1 || MbQ->slice_nr < 0 || !MbQ->p_Slice) 
   {
     MbQ->DeblockCall = 0;
   }
@@ -476,8 +476,8 @@ static void perform_db(VideoParameters *p_Vid, StorablePicture *p, int MbQAddr)
 {
   Macroblock   *MbQ = &(p_Vid->mb_data[MbQAddr]) ; // current Mb
 
-  // return, if filter is disabled
-  if (MbQ->DFDisableIdc == 1) 
+  // return, if filter is disabled or MB was not decoded
+  if (MbQ->DFDisableIdc == 1 || MbQ->slice_nr < 0 || !MbQ->p_Slice) 
   {
     MbQ->DeblockCall = 0;
   }

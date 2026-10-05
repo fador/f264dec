@@ -870,8 +870,8 @@ void get_db_strength_mbaff(VideoParameters *p_Vid, StorablePicture *p, int MbQAd
 {
   Macroblock   *MbQ = &(p_Vid->mb_data[MbQAddr]) ; // current Mb
 
-  // return, if filter is disabled
-  if (MbQ->DFDisableIdc == 1) 
+  // return, if filter is disabled or MB was not decoded
+  if (MbQ->DFDisableIdc == 1 || MbQ->slice_nr < 0 || !MbQ->p_Slice) 
   {
     MbQ->DeblockCall = 0;
   }
@@ -977,8 +977,8 @@ void perform_db_mbaff(VideoParameters *p_Vid, StorablePicture *p, int MbQAddr)
 {
   Macroblock   *MbQ = &(p_Vid->mb_data[MbQAddr]) ; // current Mb
 
-  // return, if filter is disabled
-  if (MbQ->DFDisableIdc == 1) 
+  // return, if filter is disabled or MB was not decoded
+  if (MbQ->DFDisableIdc == 1 || MbQ->slice_nr < 0 || !MbQ->p_Slice) 
   {
     MbQ->DeblockCall = 0;
   }

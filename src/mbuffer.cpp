@@ -306,6 +306,8 @@ void re_init_dpb(VideoParameters *p_Vid, DecodedPictureBuffer *p_Dpb, int type)
  */
 void free_dpb(DecodedPictureBuffer *p_Dpb)
 {
+  if (!p_Dpb)
+    return;
   VideoParameters *p_Vid = p_Dpb->p_Vid;
   unsigned i;
   if (p_Dpb->fs)
@@ -1887,6 +1889,7 @@ static int output_one_frame_from_dpb(DecodedPictureBuffer *p_Dpb)
   if (p_Dpb->used_size < 1)
   {
     error("Cannot output frame, DPB empty.",150);
+    return 0;
   }
 
   // find smallest POC
@@ -1943,13 +1946,13 @@ static int output_one_frame_from_dpb(DecodedPictureBuffer *p_Dpb)
  */
 void flush_dpb(DecodedPictureBuffer *p_Dpb)
 {
+  if (!p_Dpb || !p_Dpb->init_done)
+    return;
   VideoParameters *p_Vid = p_Dpb->p_Vid;
   uint32 i;
 
   // diagnostics
   // printf("Flush remaining frames from the dpb. p_Dpb->size=%d, p_Dpb->used_size=%d\n",p_Dpb->size,p_Dpb->used_size);
-  if(!p_Dpb->init_done)
-    return;
 //  if(p_Vid->conceal_mode == 0)
   if (p_Vid->conceal_mode != 0)
     conceal_non_ref_pics(p_Dpb, 0);

@@ -38,11 +38,11 @@ typedef struct annex_b_struct
 
 extern int  get_annex_b_NALU (VideoParameters *p_Vid, NALU_t *nalu, ANNEXB_t *annex_b);
 
-extern void open_annex_b        (char *fn, ANNEXB_t *annex_b);
+extern int  open_annex_b        (char *fn, ANNEXB_t *annex_b);
 extern void open_annex_b_memory (ANNEXB_t *annex_b);
 extern int  annex_b_push        (ANNEXB_t *annex_b, const byte *data, size_t size);
 extern void close_annex_b       (ANNEXB_t *annex_b);
-extern void malloc_annex_b      (VideoParameters *p_Vid, ANNEXB_t **p_annex_b);
+extern int  malloc_annex_b      (VideoParameters *p_Vid, ANNEXB_t **p_annex_b);
 extern void free_annex_b        (ANNEXB_t **p_annex_b);
 extern void init_annex_b        (ANNEXB_t *annex_b);
 extern void reset_annex_b       (ANNEXB_t *annex_b);

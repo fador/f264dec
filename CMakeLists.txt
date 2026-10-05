@@ -7,7 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Platform & compiler specific flags
 if(MSVC)
-  add_compile_options(/W3 /O2 /MP /utf-8 /permissive)
+  add_compile_options(/W3 /O2 /MP /utf-8 /permissive /Zi)
+  add_link_options(/DEBUG)
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE WIN32_LEAN_AND_MEAN NOMINMAX)
 else()
   add_compile_options(-Wall -O3 -fno-strict-aliasing)
