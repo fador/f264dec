@@ -1025,6 +1025,18 @@ int decode_one_frame(DecoderParams *pDecoder)
     slot->p_Vid->dec_picture = p_Vid->dec_picture;
     slot->dec_picture = p_Vid->dec_picture;
 
+    // Give the slot its own slice-group map: the master regenerates its map
+    // for every picture and would free the memory a running job still reads.
+    if (slot->mb_to_slice_group_map != nullptr &&
+        slot->allocated_map_size >= (int)p_Vid->FrameSizeInMbs &&
+        p_Vid->MbToSliceGroupMap != nullptr) {
+      memcpy(slot->mb_to_slice_group_map, p_Vid->MbToSliceGroupMap,
+             p_Vid->FrameSizeInMbs * sizeof(int));
+      slot->p_Vid->MbToSliceGroupMap = slot->mb_to_slice_group_map;
+    } else {
+      slot->p_Vid->MbToSliceGroupMap = nullptr;
+    }
+
     init_Deblock(slot->p_Vid, slot->ppSliceList[0]->mb_aff_frame_flag);
 
     // Initialize slot frame buffers (same as init_picture lines 259-299)

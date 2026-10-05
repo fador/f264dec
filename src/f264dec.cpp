@@ -1120,6 +1120,12 @@ int CloseDecoder()
     return DEC_CLOSE_NOERR;
 
   if (pDecoder->frame_pipeline) {
+    // Wait for the frame jobs before freeing their slices and buffers. The
+    // decoder may be closed with pictures still in flight (a player resets it
+    // to seek), and those workers read the very structures freed below.
+    if (pDecoder->thread_queue) {
+      f264_frame_pipeline_flush((FramePipeline*)pDecoder->frame_pipeline, pDecoder->thread_queue);
+    }
     f264_frame_pipeline_free((FramePipeline*)pDecoder->frame_pipeline);
     pDecoder->frame_pipeline = NULL;
   }

@@ -58,6 +58,10 @@ if(F264DEC_BUILD_TESTS)
     add_executable(test_memory_api tests/test_memory_api.cpp)
     target_link_libraries(test_memory_api PRIVATE f264dec_lib)
 
+    # Reset/close with the threaded pipeline still busy
+    add_executable(test_threaded_close tests/test_threaded_close.cpp)
+    target_link_libraries(test_threaded_close PRIVATE f264dec_lib)
+
     enable_testing()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams")
       find_package(Python3 COMPONENTS Interpreter QUIET)
@@ -77,6 +81,11 @@ if(F264DEC_BUILD_TESTS)
       add_test(
         NAME memory_api_high10_test
         COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/high10.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/high10.md5" 10
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      )
+      add_test(
+        NAME threaded_close_test
+        COMMAND test_threaded_close "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/high_hier_b.264"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       )
     endif()

@@ -56,6 +56,11 @@ void f264_frame_pipeline_ensure_buffers(FrameWorkerSlot *slot, VideoParameters *
     free_mem2Dint(slot->siblock);
     slot->siblock = nullptr;
   }
+  if (slot->mb_to_slice_group_map) {
+    free(slot->mb_to_slice_group_map);
+    slot->mb_to_slice_group_map = nullptr;
+    slot->allocated_map_size = 0;
+  }
 
   // Allocate new buffers
   slot->mb_data = (Macroblock*)calloc(p_Vid->FrameSizeInMbs, sizeof(Macroblock));
@@ -63,6 +68,8 @@ void f264_frame_pipeline_ensure_buffers(FrameWorkerSlot *slot, VideoParameters *
   get_mem2D(&(slot->ipredmode), 4 * p_Vid->FrameHeightInMbs, 4 * p_Vid->PicWidthInMbs);
   get_mem4D(&(slot->nz_coeff), p_Vid->FrameSizeInMbs, 3, BLOCK_SIZE, BLOCK_SIZE);
   get_mem2Dint(&(slot->siblock), p_Vid->FrameHeightInMbs, p_Vid->PicWidthInMbs);
+  slot->mb_to_slice_group_map = (int*)calloc(p_Vid->FrameSizeInMbs, sizeof(int));
+  slot->allocated_map_size = p_Vid->FrameSizeInMbs;
 
   slot->allocated_FrameSizeInMbs = p_Vid->FrameSizeInMbs;
   slot->allocated_FrameHeightInMbs = p_Vid->FrameHeightInMbs;
@@ -124,6 +131,10 @@ void f264_frame_pipeline_free(FramePipeline *pipeline)
     if (slot.siblock) {
       free_mem2Dint(slot.siblock);
       slot.siblock = nullptr;
+    }
+    if (slot.mb_to_slice_group_map) {
+      free(slot.mb_to_slice_group_map);
+      slot.mb_to_slice_group_map = nullptr;
     }
     if (slot.p_Vid) {
       free(slot.p_Vid);

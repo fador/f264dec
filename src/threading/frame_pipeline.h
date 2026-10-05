@@ -14,6 +14,11 @@ struct FrameWorkerSlot {
   byte **ipredmode{nullptr};
   byte ****nz_coeff{nullptr};
   int **siblock{nullptr};
+  // Own copy of the master's macroblock-to-slice-group map: the master
+  // regenerates its own map for every picture, and a running job must not
+  // follow the freed pointer.
+  int *mb_to_slice_group_map{nullptr};
+  int allocated_map_size{0};
   Slice **ppSliceList{nullptr};
   int iSliceNumOfCurrPic{0};
   int iNumOfSlicesAllocated{0};
