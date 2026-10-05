@@ -2116,11 +2116,8 @@ void exit_picture(VideoParameters *p_Vid, StorablePicture **dec_picture)
       else
         fprintf(stdout,"%05d(%s%5d %5d %5d                             %s %7d\n",
         p_Vid->frame_no, p_Vid->cslice_type, frame_poc, pic_num, qp, yuvFormat, (int)tmp_time);
+      fflush(stdout);
     }
-    else
-      fprintf(stdout,"Completed Decoding frame %05d.\r",snr->frame_ctr);
-
-    fflush(stdout);
 
     if(slice_type == I_SLICE || slice_type == SI_SLICE || slice_type == P_SLICE || refpic)   // I or P pictures
     {

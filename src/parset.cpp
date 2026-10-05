@@ -678,7 +678,7 @@ void reset_format_info(seq_parameter_set_rbsp_t *sps, VideoParameters *p_Vid, Fr
 
   if (p_Vid->first_sps == TRUE) {
     p_Vid->first_sps = FALSE;
-    if(!p_Inp->bDisplayDecParams) {
+    if(!p_Inp->silent && !p_Inp->bDisplayDecParams) {
       fprintf(stdout,"Profile IDC  : %d\n", sps->profile_idc);
       fprintf(stdout,"Image Format : %dx%d (%dx%d)\n", source->width[0], source->height[0], p_Vid->width, p_Vid->height);
       if (p_Vid->yuv_format == YUV400)
