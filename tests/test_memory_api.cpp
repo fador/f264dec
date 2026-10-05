@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include "f264dec.h"
 
@@ -148,8 +149,10 @@ int main(int argc, char **argv) {
     std::cout << "test_memory_api starting..." << std::endl;
     std::string stream_path = "tests/streams/base_cavlc_slices.264";
     std::string md5_path = "tests/streams/base_cavlc_slices.md5";
+    int expected_bit_depth = 0;
     if (argc >= 2) stream_path = argv[1];
     if (argc >= 3) md5_path = argv[2];
+    if (argc >= 4) expected_bit_depth = std::atoi(argv[3]);
 
     std::cout << "Opening stream: " << stream_path << std::endl;
     std::ifstream sf(stream_path, std::ios::binary);
@@ -213,6 +216,7 @@ int main(int argc, char **argv) {
     std::cout << "All chunks pushed." << std::endl;
 
     int frames_received = 0;
+    int reported_bit_depth = 0;
     f264_picture *pic = nullptr;
 
     while (true) {
@@ -225,6 +229,9 @@ int main(int argc, char **argv) {
             break;
         }
         if (pic) {
+            if (reported_bit_depth == 0) {
+                reported_bit_depth = pic->bit_depth;
+            }
             hash_picture(&md5_ctx, pic);
             frames_received++;
         }
@@ -232,6 +239,9 @@ int main(int argc, char **argv) {
 
     std::cout << "Flushing remaining pictures..." << std::endl;
     while (api->decoder_flush(dec, &pic) == F264_OK && pic) {
+        if (reported_bit_depth == 0) {
+            reported_bit_depth = pic->bit_depth;
+        }
         hash_picture(&md5_ctx, pic);
         frames_received++;
     }
@@ -245,11 +255,18 @@ int main(int argc, char **argv) {
 
     std::cout << "Stream: " << stream_path << std::endl;
     std::cout << "Frames decoded in-memory: " << frames_received << std::endl;
+    std::cout << "Reported bit depth: " << reported_bit_depth << std::endl;
     std::cout << "Actual MD5:   " << actual_md5 << std::endl;
     std::cout << "Expected MD5: " << expected_md5 << std::endl;
 
     if (!expected_md5.empty() && actual_md5 != expected_md5) {
         std::cerr << "FAIL: MD5 mismatch!" << std::endl;
+        return 1;
+    }
+
+    if (expected_bit_depth != 0 && reported_bit_depth != expected_bit_depth) {
+        std::cerr << "FAIL: expected bit depth " << expected_bit_depth << ", got "
+                  << reported_bit_depth << std::endl;
         return 1;
     }
 

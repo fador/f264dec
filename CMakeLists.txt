@@ -71,7 +71,12 @@ if(F264DEC_BUILD_TESTS)
       endif()
       add_test(
         NAME memory_api_test
-        COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.md5"
+        COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.md5" 8
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      )
+      add_test(
+        NAME memory_api_high10_test
+        COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/high10.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/high10.md5" 10
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       )
     endif()

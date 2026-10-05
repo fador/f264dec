@@ -279,7 +279,8 @@ static void allocate_p_dec_pic(VideoParameters *p_Vid, DecodedPicList *pDecPic, 
   //init;
   pDecPic->iYUVFormat = p->chroma_format_idc;
   pDecPic->iYUVStorageFormat = 0;
-  pDecPic->iBitDepth = p_Vid->pic_unit_bitsize_on_disk;
+  pDecPic->iBitDepth = (p_Vid->bitdepth_luma > 0) ? p_Vid->bitdepth_luma
+                                                  : p_Vid->pic_unit_bitsize_on_disk;
   pDecPic->iWidth = iLumaSizeX; //p->size_x;
   pDecPic->iHeight = iLumaSizeY; //p->size_y;
   pDecPic->iYBufStride = iLumaSizeX*symbol_size_in_bytes; //p->size_x *symbol_size_in_bytes;
