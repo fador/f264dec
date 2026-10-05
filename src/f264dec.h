@@ -83,6 +83,8 @@ typedef struct f264_picture {
 
 typedef f264_picture f264dec_picture_t;
 
+typedef void (*f264_error_callback)(void *user_data, int code, const char *msg);
+
 /**
  * \brief Decoder configuration settings.
  */
@@ -98,12 +100,15 @@ typedef struct f264_config {
   int32_t deblock_enable;     //!< Enable deblocking filter (default: 1)
   int32_t file_format;        //!< Input bitstream format (0 = Annex B)
   int32_t memory_input;       //!< In-memory input flag (1 = stream via f264_decoder_push, 0 = file)
+  f264_error_callback error_cb; //!< Optional error callback (NULL = print to stderr)
+  void *error_cb_user_data;     //!< User context pointer passed to error_cb
 } f264_config;
 
 typedef f264_config f264dec_config_t;
 
 /**
  * \brief Opaque decoder instance handle.
+ * \note Currently f264dec supports one active decoder instance per process.
  */
 typedef struct f264_decoder f264_decoder;
 typedef f264_decoder f264dec_t;
@@ -134,6 +139,8 @@ typedef struct f264_api {
 
   /**
    * \brief Open and initialize a decoder instance.
+   * \note Only one active decoder instance can exist per process. Returns NULL if
+   *       an instance is already active.
    */
   f264_decoder *(*decoder_open)(const f264_config *cfg);
 
@@ -145,13 +152,20 @@ typedef struct f264_api {
   /**
    * \brief Decode next frame from bitstream.
    * \param dec      Decoder instance
-   * \param pic_out  Pointer to store decoded picture pointer (or NULL if no picture ready)
+   * \param pic_out  Pointer to store decoded picture pointer (or NULL if no picture ready).
+   *                 Plane pointers (y, u, v) alias internal decoder memory valid until
+   *                 the next call to decoder_decode, decoder_get_picture, or decoder_flush.
+   *                 Copy pixels if needed across iterations.
    * \return F264_OK on success, F264_EOS at end of stream, or negative error code.
+   * \note When using memory_input, one access unit of lookahead is required to detect
+   *       picture boundaries (the decoder must see the start of the next picture before
+   *       emitting the current one).
    */
   int           (*decoder_decode)(f264_decoder *dec, f264_picture **pic_out);
 
   /**
    * \brief Flush remaining queued pictures from the DPB.
+   * \note Call repeatedly until it returns F264_EOS to drain all remaining pictures.
    */
   int           (*decoder_flush)(f264_decoder *dec, f264_picture **pic_out);
 
@@ -167,7 +181,7 @@ typedef struct f264_api {
   /**
    * \brief Consume and retrieve next available decoded picture from output list.
    * \param dec Decoder instance
-   * \return Pointer to next valid f264_picture, or NULL if no pictures available.
+   * \return Pointer to next valid f264_picture (aliased), or NULL if none available.
    */
   f264_picture *(*decoder_get_picture)(f264_decoder *dec);
 

@@ -52,8 +52,9 @@ int read_next_nalu(VideoParameters *p_Vid, NALU_t *nalu)
 
   if (ret < 0)
   {
-    snprintf (errortext, ET_SIZE, "Error while getting the NALU in file format %s, exit\n", p_Inp->FileFormat==PAR_OF_ANNEXB?"Annex B":"RTP");
+    snprintf (errortext, ET_SIZE, "Error while getting the NALU in file format %s\n", p_Inp->FileFormat==PAR_OF_ANNEXB?"Annex B":"RTP");
     error (errortext, 601);
+    return -1;
   }
   if (ret == 0)
   {
@@ -68,12 +69,16 @@ int read_next_nalu(VideoParameters *p_Vid, NALU_t *nalu)
   ret = NALUtoRBSP(nalu);
 
   if (ret < 0)
+  {
     error ("Invalid startcode emulation prevention found.", 602);
+    return -1;
+  }
 
   // Got a NALU
   if (nalu->forbidden_bit)
   {
     error ("Found NALU with forbidden_bit set, bit error?", 603);
+    return -1;
   }
 
   return nalu->len;

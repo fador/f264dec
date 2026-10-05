@@ -176,10 +176,6 @@ static void init_picture(VideoParameters *p_Vid, Slice *currSlice, InputParamete
           conceal_lost_frames(p_Dpb, currSlice);
         }
       }
-      else
-      {   /* Advanced Error Concealment would be called here to combat unintentional loss of pictures. */
-        error("An unintentional loss of pictures occurs! Exit\n", 100);
-      }
     }
     if(p_Vid->conceal_mode == 0)
       fill_frame_num_gap(p_Vid, currSlice);

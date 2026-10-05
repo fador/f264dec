@@ -198,6 +198,14 @@ api->decoder_close(dec);
 api->config_destroy(cfg);
 ```
 
+### Key Architectural & Integration Notes
+
+- **Access Unit Lookahead**: H.264 slice decoding identifies picture boundaries when encountering the first VCL slice of the *next* picture. When using `memory_input = 1`, push at least one access unit ahead of the frame being read, or call `api->decoder_flush()` at end-of-stream to drain the final picture.
+- **Picture Memory Aliasing**: Plane pointers (`y`, `u`, `v`) in `f264_picture` reference internal DPB memory and remain valid until the next call to `api->decoder_decode()`, `api->decoder_get_picture()`, or `api->decoder_flush()`. Callers retaining frames across decode calls should copy pixels into caller-allocated memory (e.g. allocated via `api->picture_alloc()`).
+- **Single Instance Constraint**: Due to legacy JM decoder architecture, `f264dec` currently supports one active decoder instance per process. `api->decoder_open()` returns `NULL` if an instance is already active.
+- **Library Safety & Non-Terminating Errors**: Corrupted streams, packet drops, or frame-number gaps do not terminate the process with `exit()`. Frame gaps are automatically concealed and missing reference frames filled, while syntax errors return error codes or dispatch to `cfg->error_cb`.
+- **Subproject Embedding (`add_subdirectory`)**: When embedded in a player or parent project via `add_subdirectory(f264dec)`, `F264DEC_BUILD_CLI` and `F264DEC_BUILD_TESTS` default to `OFF`. Consumers can simply link to `f264dec::f264dec`.
+
 ---
 
 ## Project Structure

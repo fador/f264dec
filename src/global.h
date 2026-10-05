@@ -964,6 +964,8 @@ typedef struct inp_par
   int threads;                                //!< Number of worker threads for multithreading (0=auto)
   int cpuid;                                  //!< 1=detect SIMD (AVX2/SSE2), 0=disable SIMD (generic C++ only)
   int memory_input;                           //!< 1=in-memory input stream via f264_decoder_push
+  void (*error_cb)(void *user_data, int code, const char *msg); //!< Optional error callback
+  void *error_cb_user_data;                   //!< Context for error callback
 } InputParameters;
 
 typedef struct old_slice_par

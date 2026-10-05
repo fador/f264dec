@@ -386,7 +386,6 @@ void interpret_spare_pic( byte* payload, int size, VideoParameters *p_Vid )
       break;
     default:
       printf( "Wrong ref_area_indicator %d!\n", ref_area_indicator );
-      exit(0);
       break;
     }
 

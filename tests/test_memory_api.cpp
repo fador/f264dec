@@ -173,6 +173,16 @@ int main(int argc, char **argv) {
     cfg->threads = 1;
     cfg->outfile[0] = '\0'; // IN-MEMORY ONLY! No file output!
 
+    // Test config_parse for deblock_enable and file_format
+    if (!api->config_parse(cfg, "deblock_enable", "1") || cfg->deblock_enable != 1) {
+        std::cerr << "FAIL: config_parse deblock_enable failed\n";
+        return 1;
+    }
+    if (!api->config_parse(cfg, "file_format", "0") || cfg->file_format != 0) {
+        std::cerr << "FAIL: config_parse file_format failed\n";
+        return 1;
+    }
+
     std::cout << "Calling decoder_open..." << std::endl;
     f264_decoder *dec = api->decoder_open(cfg);
     if (!dec) {
@@ -181,6 +191,15 @@ int main(int argc, char **argv) {
         return 1;
     }
     std::cout << "Decoder opened successfully." << std::endl;
+
+    // Test single-instance constraint: second open should return NULL
+    f264_decoder *dec2 = api->decoder_open(cfg);
+    if (dec2 != nullptr) {
+        std::cerr << "FAIL: second decoder_open should have returned NULL\n";
+        api->decoder_close(dec2);
+        return 1;
+    }
+    std::cout << "Verified single-instance guard successfully." << std::endl;
 
     md5_detail::MD5Context md5_ctx;
     md5_detail::init(&md5_ctx);

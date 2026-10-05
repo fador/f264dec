@@ -65,8 +65,8 @@ static int FmoGenerateMapUnitToSliceGroupMap (VideoParameters *p_Vid, Slice *cur
     free (p_Vid->MapUnitToSliceGroupMap);
   if ((p_Vid->MapUnitToSliceGroupMap = (int *) malloc ((NumSliceGroupMapUnits) * sizeof (int))) == NULL)
   {
-    printf ("cannot allocated %d bytes for p_Vid->MapUnitToSliceGroupMap, exit\n", (int) ( (pps->pic_size_in_map_units_minus1+1) * sizeof (int)));
-    exit (-1);
+    printf ("cannot allocated %d bytes for p_Vid->MapUnitToSliceGroupMap\n", (int) ( (pps->pic_size_in_map_units_minus1+1) * sizeof (int)));
+    return -1;
   }
 
   if (pps->num_slice_groups_minus1 == 0)    // only one slice group
@@ -99,8 +99,8 @@ static int FmoGenerateMapUnitToSliceGroupMap (VideoParameters *p_Vid, Slice *cur
     FmoGenerateType6MapUnitMap (p_Vid, NumSliceGroupMapUnits);
     break;
   default:
-    printf ("Illegal slice_group_map_type %d , exit \n", (int) pps->slice_group_map_type);
-    exit (-1);
+    printf ("Illegal slice_group_map_type %d\n", (int) pps->slice_group_map_type);
+    return -1;
   }
   return 0;
 }
@@ -128,8 +128,8 @@ static int FmoGenerateMbToSliceGroupMap (VideoParameters *p_Vid, Slice *pSlice)
 
   if ((p_Vid->MbToSliceGroupMap = (int *) malloc ((p_Vid->PicSizeInMbs) * sizeof (int))) == NULL)
   {
-    printf ("cannot allocate %d bytes for p_Vid->MbToSliceGroupMap, exit\n", (int) ((p_Vid->PicSizeInMbs) * sizeof (int)));
-    exit (-1);
+    printf ("cannot allocate %d bytes for p_Vid->MbToSliceGroupMap\n", (int) ((p_Vid->PicSizeInMbs) * sizeof (int)));
+    return -1;
   }
 
 

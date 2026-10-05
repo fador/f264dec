@@ -357,6 +357,8 @@ static void write_out_picture(VideoParameters *p_Vid, StorablePicture *p, int p_
 
   // KS: this buffer should actually be allocated only once, but this is still much faster than the previous version
   pDecPic = get_one_avail_dec_pic_from_list(p_Vid->pDecOuputPic, 0, 0);
+  if (!p_Vid->pDecOuputPic)
+    p_Vid->pDecOuputPic = pDecPic;
   if( (pDecPic->pY == NULL)
     || (pDecPic->iBufSize < iFrameSize)
     )

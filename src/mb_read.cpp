@@ -616,7 +616,7 @@ static void init_decoding_engine_IPCM(Slice *currSlice)
   else
   {
     printf("Partition Mode is not supported\n");
-    exit(1);
+    return;
   }
 
   for(i=0;i<PartitionNumber;++i)

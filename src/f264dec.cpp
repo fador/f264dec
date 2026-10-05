@@ -96,14 +96,20 @@ void init_frext(VideoParameters *p_Vid);
  */
 void error(char *text, int code)
 {
-  fprintf(stderr, "%s\n", text);
-  fflush(stderr);
+  if (p_Dec && p_Dec->p_Inp && p_Dec->p_Inp->error_cb)
+  {
+    p_Dec->p_Inp->error_cb(p_Dec->p_Inp->error_cb_user_data, code, text);
+    return;
+  }
+  if (!p_Dec || !p_Dec->p_Inp || !p_Dec->p_Inp->silent)
+  {
+    fprintf(stderr, "%s\n", text);
+    fflush(stderr);
+  }
   if (p_Dec)
   {
     flush_dpb(p_Dec->p_Vid->p_Dpb_layer[0]);
   }
-
-  exit(code);
 }
 
 static void reset_dpb( VideoParameters *p_Vid, DecodedPictureBuffer *p_Dpb )
@@ -1034,7 +1040,6 @@ void free_global_buffers(VideoParameters *p_Vid)
 void report_stats_on_error(void)
 {
   //free_encoder_memory(p_Vid);
-  exit (-1);
 }
 
 void ClearDecPicList(VideoParameters *p_Vid)
@@ -1083,7 +1088,10 @@ DecodedPicList *get_one_avail_dec_pic_from_list(DecodedPicList *pDecPicList, int
   if(!pPic)
   {
     pPic = (DecodedPicList *)calloc(1, sizeof(*pPic));
-    pPrior->pNext = pPic;
+    if (pPrior)
+    {
+      pPrior->pNext = pPic;
+    }
   }
 
   return pPic;
@@ -1388,6 +1396,8 @@ int f264_config_init(f264_config *cfg)
   cfg->deblock_enable = 1;
   cfg->file_format = 0;      // PAR_OF_ANNEXB
   cfg->memory_input = 0;
+  cfg->error_cb = NULL;
+  cfg->error_cb_user_data = NULL;
   return 1;
 }
 
@@ -1424,6 +1434,14 @@ int f264_config_parse(f264_config *cfg, const char *name, const char *value)
   }
   if (strcmp(name, "memory_input") == 0) {
     cfg->memory_input = atoi(value);
+    return 1;
+  }
+  if (strcmp(name, "deblock_enable") == 0 || strcmp(name, "deblock") == 0) {
+    cfg->deblock_enable = atoi(value);
+    return 1;
+  }
+  if (strcmp(name, "file_format") == 0) {
+    cfg->file_format = atoi(value);
     return 1;
   }
   return 0;
@@ -1519,6 +1537,10 @@ static void fill_f264_picture_from_dec_pic(f264_picture *out, DecodedPicList *de
 f264_decoder * f264_decoder_open(const f264_config *cfg)
 {
   if (!cfg) return NULL;
+  if (p_Dec != NULL) {
+    fprintf(stderr, "f264dec error: only one active decoder instance is supported per process\n");
+    return NULL;
+  }
   InputParameters inp;
   memset(&inp, 0, sizeof(inp));
   strncpy(inp.infile, cfg->infile, sizeof(inp.infile) - 1);
@@ -1530,6 +1552,8 @@ f264_decoder * f264_decoder_open(const f264_config *cfg)
   inp.silent = cfg->silent;
   inp.FileFormat = PAR_OF_ANNEXB;
   inp.memory_input = cfg->memory_input;
+  inp.error_cb = cfg->error_cb;
+  inp.error_cb_user_data = cfg->error_cb_user_data;
 
   int ret = OpenDecoder(&inp);
   if (ret != DEC_OPEN_NOERR || !p_Dec) {

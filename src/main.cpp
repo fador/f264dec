@@ -130,13 +130,20 @@ int main(int argc, char **argv)
             std::cerr << "Decoding error at frame " << frames_decoded << " (code " << ret << ")\n";
             break;
         }
+        if (pic) {
+            frames_decoded++;
+            if (max_frames > 0 && frames_decoded >= max_frames) {
+                break;
+            }
+        }
+    }
+
+    while (api->decoder_flush(dec, &pic) == F264_OK && pic) {
         frames_decoded++;
         if (max_frames > 0 && frames_decoded >= max_frames) {
             break;
         }
     }
-
-    api->decoder_flush(dec, &pic);
     api->decoder_close(dec);
     api->config_destroy(cfg);
 

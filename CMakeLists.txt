@@ -17,44 +17,63 @@ else()
   endif()
 endif()
 
+# Top-level detection
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(F264DEC_IS_TOP_LEVEL ON)
+else()
+  set(F264DEC_IS_TOP_LEVEL OFF)
+endif()
+
+option(F264DEC_BUILD_CLI "Build the f264dec command-line executable" ${F264DEC_IS_TOP_LEVEL})
+option(F264DEC_BUILD_TESTS "Build tests for f264dec" ${F264DEC_IS_TOP_LEVEL})
+
 # Source files
 file(GLOB_RECURSE F264DEC_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 list(REMOVE_ITEM F264DEC_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 
 # Core decoder static library
 add_library(f264dec_lib STATIC ${F264DEC_SOURCES})
+add_library(f264dec::f264dec ALIAS f264dec_lib)
 target_include_directories(f264dec_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-
-# Main executable
-add_executable(f264dec src/main.cpp)
-target_link_libraries(f264dec PRIVATE f264dec_lib)
-
-# Memory API test executable
-add_executable(test_memory_api tests/test_memory_api.cpp)
-target_link_libraries(test_memory_api PRIVATE f264dec_lib)
 
 if(UNIX AND NOT APPLE)
   target_link_libraries(f264dec_lib PUBLIC m)
 endif()
 
-# Threading support (ready for threadpool)
+# Threading support
 find_package(Threads REQUIRED)
 target_link_libraries(f264dec_lib PUBLIC Threads::Threads)
 
-# CTest integration
-include(CTest)
-if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams")
-  enable_testing()
-  find_package(Python3 COMPONENTS Interpreter REQUIRED)
-  add_test(
-    NAME regression_test
-    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.py"
-            --decoder "$<TARGET_FILE:f264dec>"
-            --streams-dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams"
-  )
-  add_test(
-    NAME memory_api_test
-    COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.md5"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-  )
+# Main executable
+if(F264DEC_BUILD_CLI)
+  add_executable(f264dec src/main.cpp)
+  target_link_libraries(f264dec PRIVATE f264dec_lib)
+endif()
+
+# Tests
+if(F264DEC_BUILD_TESTS)
+  include(CTest)
+  if(BUILD_TESTING)
+    # Memory API test executable
+    add_executable(test_memory_api tests/test_memory_api.cpp)
+    target_link_libraries(test_memory_api PRIVATE f264dec_lib)
+
+    enable_testing()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams")
+      find_package(Python3 COMPONENTS Interpreter QUIET)
+      if(Python3_FOUND AND TARGET f264dec)
+        add_test(
+          NAME regression_test
+          COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.py"
+                  --decoder "$<TARGET_FILE:f264dec>"
+                  --streams-dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams"
+        )
+      endif()
+      add_test(
+        NAME memory_api_test
+        COMMAND test_memory_api "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.264" "${CMAKE_CURRENT_SOURCE_DIR}/tests/streams/base_cavlc_slices.md5"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      )
+    endif()
+  endif()
 endif()

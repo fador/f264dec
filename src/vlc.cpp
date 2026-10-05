@@ -762,7 +762,6 @@ int readSyntaxElement_NumCoeffTrailingOnes(SyntaxElement *sym,
     if (retval)
     {
       printf("ERROR: failed to find NumCoeff/TrailingOnes\n");
-      exit(-1);
     }
   }
 
@@ -825,7 +824,6 @@ int readSyntaxElement_NumCoeffTrailingOnesChromaDC(VideoParameters *p_Vid, Synta
   if (retval)
   {
     printf("ERROR: failed to find NumCoeff/TrailingOnes ChromaDC\n");
-    exit(-1);
   }
 
 
@@ -1012,7 +1010,6 @@ int readSyntaxElement_TotalZeros(SyntaxElement *sym,  Bitstream *currStream)
   if (retval)
   {
     printf("ERROR: failed to find Total Zeros !cdc\n");
-    exit(-1);
   }
 
 
@@ -1099,7 +1096,6 @@ int readSyntaxElement_TotalZerosChromaDC(VideoParameters *p_Vid, SyntaxElement *
   if (retval)
   {
     printf("ERROR: failed to find Total Zeros\n");
-    exit(-1);
   }
 
 
@@ -1143,7 +1139,6 @@ int readSyntaxElement_Run(SyntaxElement *sym, Bitstream *currStream)
   if (retval)
   {
     printf("ERROR: failed to find Run\n");
-    exit(-1);
   }
 
 
