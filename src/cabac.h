@@ -27,6 +27,7 @@ extern void delete_contexts_MotionInfo(MotionInfoContexts *enco_ctx);
 extern void delete_contexts_TextureInfo(TextureInfoContexts *enco_ctx);
 
 extern void cabac_new_slice(Slice *currSlice);
+extern void init_contexts(Slice *currslice);
 
 extern void readMB_typeInfo_CABAC_i_slice   (Macroblock *currMB, SyntaxElement *se, DecodingEnvironmentPtr dep_dp);
 extern void readMB_typeInfo_CABAC_p_slice   (Macroblock *currMB, SyntaxElement *se, DecodingEnvironmentPtr dep_dp);

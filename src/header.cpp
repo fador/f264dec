@@ -17,8 +17,6 @@
 #include "mbuffer.h"
 #include "header.h"
 
-#include "ctx_tables.h"
-
 
 #define SYMTRACESTRING(s) // do nothing
 

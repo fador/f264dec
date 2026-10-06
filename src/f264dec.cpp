@@ -42,10 +42,6 @@
  ***********************************************************************
  */
 
-#include "contributors.h"
-
-//#include <sys/stat.h>
-
 #include "global.h"
 #include "annexb.h"
 #include "threading/frame_pipeline.h"
@@ -62,7 +58,7 @@
 #include "quant.h"
 #include "block.h"
 #include "nalu.h"
-#include "loopfilter.h"
+#include "loop_filter.h"
 #include "h264decoder.h"
 #include "strategies/strategyselector.h"
 #include "threading/threadqueue.h"

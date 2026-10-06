@@ -20,8 +20,6 @@
  ***********************************************************************
 */
 
-#include "contributors.h"
-
 #include <math.h>
 
 #include "block.h"
@@ -42,14 +40,12 @@
 #include "mv_prediction.h"
 #include "mb_prediction.h"
 #include "fast_memory.h"
-#include "filehandle.h"
 
 #define TRACE_STRING(s)
 #define TRACE_DECBITS(i)
 #define TRACE_PRINTF(s) 
 #define TRACE_STRING_P(s)
 
-extern void set_read_comp_coeff_cabac     (Macroblock *currMB);
 extern void set_read_comp_coeff_cavlc     (Macroblock *currMB);
 
 static inline void update_pixel_pos8(PixelPos *pos_block, const PixelPos *pos_mb, int pos)
@@ -523,7 +519,6 @@ static void init_macroblock_direct(Macroblock *currMB)
   PicMotionParams **mv_info = &currMB->p_Slice->dec_picture->mv_info[currMB->block_y]; 
   int i, j;
 
-  set_read_comp_coeff_cabac(currMB);
   set_read_comp_coeff_cavlc(currMB);
   i = currMB->block_x;
   for(j = 0; j < BLOCK_SIZE; ++j)
@@ -559,7 +554,6 @@ static void init_macroblock(Macroblock *currMB)
     reset_mv_info(*(mv_info++) + i, slice_no);
   }
 
-  set_read_comp_coeff_cabac(currMB);
   set_read_comp_coeff_cavlc(currMB);
 }
 

@@ -29,4 +29,7 @@ extern void ihadamard4x2 (int **tblock, int **block);
 extern void hadamard2x2  (int **block , int tblock[4]);
 extern void ihadamard2x2 (int block[4], int tblock[4]);
 
+extern void itrans8x8   (Macroblock *currMB, ColorPlane pl, int ioff, int joff);
+extern void icopy8x8    (Macroblock *currMB, ColorPlane pl, int ioff, int joff);
+
 #endif //_TRANSFORM_H_

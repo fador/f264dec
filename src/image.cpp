@@ -26,8 +26,6 @@
  ***********************************************************************
  */
 
-#include "contributors.h"
-
 #include <math.h>
 #include <limits.h>
 #include <vector>
@@ -50,17 +48,16 @@
 #include "memalloc.h"
 #include "macroblock.h"
 
-#include "loopfilter.h"
+#include "loop_filter.h"
 
 #include "biaridecod.h"
-#include "context_ini.h"
 #include "cabac.h"
 #include "vlc.h"
 #include "quant.h"
 
 #include "errorconcealment.h"
 #include "erc_api.h"
-#include "mbuffer_common.h"
+#include "mbuffer.h"
 #include "fast_memory.h"
 #include "mc_prediction.h"
 

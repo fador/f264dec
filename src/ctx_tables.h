@@ -13,10 +13,11 @@
  **************************************************************************************
  */
 
+#ifndef _CTX_TABLES_H_
+#define _CTX_TABLES_H_
+
 #define CTX_UNUSED          {0,64}
 #define CTX_UNDEF           {0,63}
-
-#ifdef CONTEXT_INI_C
 
 
 #define NUM_CTX_MODELS_I     1

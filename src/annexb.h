@@ -12,7 +12,7 @@
 #ifndef _ANNEXB_H_
 #define _ANNEXB_H_
 
-#include "nalucommon.h"
+#include "nalu.h"
 
 typedef struct annex_b_struct 
 {

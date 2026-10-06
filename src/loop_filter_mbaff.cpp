@@ -23,7 +23,6 @@
 #include "global.h"
 #include "image.h"
 #include "mb_access.h"
-#include "loopfilter.h"
 #include "loop_filter.h"
 
 //static void get_strength_ver_MBAff     (Macroblock *MbQ, int edge, int mvlimit, StorablePicture *p);

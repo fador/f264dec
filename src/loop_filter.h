@@ -19,7 +19,11 @@
 #define _LOOP_FILTER_H_
 
 #include "global.h"
+#include "mbuffer.h"
 
+extern void DeblockPicture(VideoParameters *p_Vid, StorablePicture *p);
+extern void DeblockMbRows(VideoParameters *p_Vid, StorablePicture *p, int row0, int row1);
+void init_Deblock(VideoParameters *p_Vid, int mb_aff_frame_flag);
 
 #define GROUP_SIZE  1
 

@@ -11,8 +11,6 @@
  *************************************************************************************
  */
 
-#include "contributors.h"
-
 #include "block.h"
 #include "global.h"
 #include "mbuffer.h"
@@ -25,7 +23,6 @@
 #include "image.h"
 #include "mb_access.h"
 #include "biaridecod.h"
-#include "transform8x8.h"
 #include "transform.h"
 #include "mc_prediction.h"
 #include "quant.h"

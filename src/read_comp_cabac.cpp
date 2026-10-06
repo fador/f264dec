@@ -11,8 +11,6 @@
  ***********************************************************************
 */
 
-#include "contributors.h"
-
 #include "global.h"
 #include "elements.h"
 #include "macroblock.h"
@@ -25,8 +23,23 @@
 #define TRACE_PRINTF(s) 
 #define TRACE_STRING_P(s)
 
-extern void  check_dp_neighbors (Macroblock *currMB);
-extern void  read_delta_quant   (SyntaxElement *currSE, DataPartition *dP, Macroblock *currMB, const byte *partMap, int type);
+static inline void read_delta_quant_cabac(Macroblock *currMB, SyntaxElement *currSE, DecodingEnvironmentPtr dep_dp)
+{
+  Slice *currSlice = currMB->p_Slice;
+  VideoParameters *p_Vid = currMB->p_Vid;
+
+  TRACE_STRING_P("mb_qp_delta");
+  read_dQuant_CABAC(currMB, currSE, dep_dp);
+  currMB->delta_quant = (short) currSE->value1;
+  if ((currMB->delta_quant < -(26 + p_Vid->bitdepth_luma_qp_scale/2)) || (currMB->delta_quant > (25 + p_Vid->bitdepth_luma_qp_scale/2)))
+  {
+    printf("mb_qp_delta is out of range (%d)\n", currMB->delta_quant);
+    currMB->delta_quant = iClip3(-(26 + p_Vid->bitdepth_luma_qp_scale/2), (25 + p_Vid->bitdepth_luma_qp_scale/2), currMB->delta_quant);
+  }
+
+  currSlice->qp = ((currSlice->qp + currMB->delta_quant + 52 + 2*p_Vid->bitdepth_luma_qp_scale)%(52+p_Vid->bitdepth_luma_qp_scale)) - p_Vid->bitdepth_luma_qp_scale;
+  update_qp(currMB, currSlice->qp);
+}
 
 /*!
 ************************************************************************
@@ -35,15 +48,12 @@ extern void  read_delta_quant   (SyntaxElement *currSE, DataPartition *dP, Macro
 *    from the NAL (CABAC Mode)
 ************************************************************************
 */
-static void read_comp_coeff_4x4_smb_CABAC (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl, int block_y, int block_x, int start_scan, int64 *cbp_blk)
+static void read_comp_coeff_4x4_smb_CABAC (Macroblock *currMB, SyntaxElement *currSE, DecodingEnvironmentPtr dep_dp, ColorPlane pl, int block_y, int block_x, int start_scan, int64 *cbp_blk)
 {
   int i,j,k;
   int i0, j0;
   int level = 1;
-  DataPartition *dP;
-  //VideoParameters *p_Vid = currMB->p_Vid;
   Slice *currSlice = currMB->p_Slice;
-  const byte *partMap = assignSE2partition[currSlice->dp_mode];
 
   const byte (*pos_scan4x4)[2] = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN : FIELD_SCAN;
   const byte *pos_scan_4x4 = pos_scan4x4[0];
@@ -61,19 +71,7 @@ static void read_comp_coeff_4x4_smb_CABAC (Macroblock *currMB, SyntaxElement *cu
 
       if (start_scan == 0)
       {
-        /*
-        * make distinction between INTRA and INTER coded
-        * luminance coefficients
-        */
-        currSE->type = (currMB->is_intra_block ? SE_LUM_DC_INTRA : SE_LUM_DC_INTER);  
-        dP = &(currSlice->partArr[partMap[currSE->type]]);
-        if (dP->bitstream->ei_flag)  
-          currSE->mapping = linfo_levrun_inter;
-        else                                                     
-          currSE->reading = readRunLevel_CABAC;
-
-
-        dP->readSyntaxElement(currMB, currSE, dP);
+        readRunLevel_CABAC(currMB, currSE, dep_dp);
         level = currSE->value1;
 
         if (level != 0)    /* leave if level == 0 */
@@ -83,28 +81,16 @@ static void read_comp_coeff_4x4_smb_CABAC (Macroblock *currMB, SyntaxElement *cu
           i0 = *pos_scan_4x4++;
           j0 = *pos_scan_4x4++;
 
-          *cbp_blk |= i64_power2(j + (i >> 2)) ;
-          //cof[j + j0][i + i0]= rshift_rnd_sf((level * InvLevelScale4x4[j0][i0]) << qp_per, 4);
-          cof[j + j0][i + i0]= level;
-          //currSlice->fcf[pl][j + j0][i + i0]= level;
+          *cbp_blk |= i64_power2(j + (i >> 2));
+          cof[j + j0][i + i0] = level;
         }
       }
 
       if (level != 0)
       {
-        // make distinction between INTRA and INTER coded luminance coefficients
-        currSE->type = (currMB->is_intra_block ? SE_LUM_AC_INTRA : SE_LUM_AC_INTER);  
-        dP = &(currSlice->partArr[partMap[currSE->type]]);
-
-        if (dP->bitstream->ei_flag)  
-          currSE->mapping = linfo_levrun_inter;
-        else                                                     
-          currSE->reading = readRunLevel_CABAC;
-
         for(k = 1; (k < 17) && (level != 0); ++k)
         {
-
-          dP->readSyntaxElement(currMB, currSE, dP);
+          readRunLevel_CABAC(currMB, currSE, dep_dp);
           level = currSE->value1;
 
           if (level != 0)    /* leave if level == 0 */
@@ -115,7 +101,6 @@ static void read_comp_coeff_4x4_smb_CABAC (Macroblock *currMB, SyntaxElement *cu
             j0 = *pos_scan_4x4++;
 
             cof[j + j0][i + i0] = level;
-            //currSlice->fcf[pl][j + j0][i + i0]= level;
           }
         }
       }
@@ -130,7 +115,7 @@ static void read_comp_coeff_4x4_smb_CABAC (Macroblock *currMB, SyntaxElement *cu
 *    from the NAL (CABAC Mode)
 ************************************************************************
 */
-static void read_comp_coeff_4x4_CABAC (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl, int (*InvLevelScale4x4)[4], int qp_per, int cbp)
+static void read_comp_coeff_4x4_CABAC (Macroblock *currMB, SyntaxElement *currSE, DecodingEnvironmentPtr dep_dp, ColorPlane pl, int (*InvLevelScale4x4)[4], int qp_per, int cbp)
 {
   Slice *currSlice = currMB->p_Slice;
   VideoParameters *p_Vid = currMB->p_Vid;
@@ -153,88 +138,57 @@ static void read_comp_coeff_4x4_CABAC (Macroblock *currMB, SyntaxElement *currSE
     {
       if (cbp & (1 << ((block_y >> 2) + (block_x >> 3))))  // are there any coeff in current block at all
       {
-        read_comp_coeff_4x4_smb_CABAC (currMB, currSE, pl, block_y, block_x, start_scan, cbp_blk);
+        read_comp_coeff_4x4_smb_CABAC (currMB, currSE, dep_dp, pl, block_y, block_x, start_scan, cbp_blk);
 
-        if (start_scan == 0)
+        if (currMB->is_lossless == FALSE)
         {
-          for (j = 0; j < BLOCK_SIZE_8x8; ++j)
+          if (start_scan == 0)
           {
-            int *coef = &cof[j][block_x];
-            int jj = j & 0x03;
-            for (i = 0; i < BLOCK_SIZE_8x8; i+=4)
+            for (j = 0; j < BLOCK_SIZE_8x8; ++j)
             {
-              if (*coef)
-                *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][0]) << qp_per, 4);
-              coef++;
-              if (*coef)
-                *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][1]) << qp_per, 4);
-              coef++;
-              if (*coef)
-                *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][2]) << qp_per, 4);
-              coef++;
-              if (*coef)
-                *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][3]) << qp_per, 4);
-              coef++;
+              int *coef = &cof[j][block_x];
+              int jj = j & 0x03;
+              for (i = 0; i < BLOCK_SIZE_8x8; i+=4)
+              {
+                if (*coef)
+                  *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][0]) << qp_per, 4);
+                coef++;
+                if (*coef)
+                  *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][1]) << qp_per, 4);
+                coef++;
+                if (*coef)
+                  *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][2]) << qp_per, 4);
+                coef++;
+                if (*coef)
+                  *coef = rshift_rnd_sf((*coef * InvLevelScale4x4[jj][3]) << qp_per, 4);
+                coef++;
+              }
+            }
+          }
+          else
+          {                        
+            for (j = 0; j < BLOCK_SIZE_8x8; ++j)
+            {
+              int *coef = &cof[j][block_x];
+              int jj = j & 0x03;
+              for (i = 0; i < BLOCK_SIZE_8x8; i += 4)
+              {
+                if ((jj != 0) && *coef)
+                  *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][0]) << qp_per, 4);
+                coef++;
+                if (*coef)
+                  *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][1]) << qp_per, 4);
+                coef++;
+                if (*coef)
+                  *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][2]) << qp_per, 4);
+                coef++;
+                if (*coef)
+                  *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][3]) << qp_per, 4);
+                coef++;
+              }
             }
           }
         }
-        else
-        {                        
-          for (j = 0; j < BLOCK_SIZE_8x8; ++j)
-          {
-            int *coef = &cof[j][block_x];
-            int jj = j & 0x03;
-            for (i = 0; i < BLOCK_SIZE_8x8; i += 4)
-            {
-              if ((jj != 0) && *coef)
-                *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][0]) << qp_per, 4);
-              coef++;
-              if (*coef)
-                *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][1]) << qp_per, 4);
-              coef++;
-              if (*coef)
-                *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][2]) << qp_per, 4);
-              coef++;
-              if (*coef)
-                *coef= rshift_rnd_sf((*coef * InvLevelScale4x4[jj][3]) << qp_per, 4);
-              coef++;
-            }
-          }
-        }        
-      }
-    }
-  }
-}
-
-
-/*!
-************************************************************************
-* \brief
-*    Get coefficients (run/level) of all 4x4 blocks in a MB
-*    from the NAL (CABAC Mode)
-************************************************************************
-*/
-static void read_comp_coeff_4x4_CABAC_ls (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl, int (*InvLevelScale4x4)[4], int qp_per, int cbp)
-{
-  VideoParameters *p_Vid = currMB->p_Vid;
-  int start_scan = IS_I16MB (currMB)? 1 : 0; 
-  int block_y, block_x;
-  int64 *cbp_blk = &currMB->s_cbp[pl].blk;
-
-  if( pl == PLANE_Y || (p_Vid->separate_colour_plane_flag != 0) )
-    currSE->context = (IS_I16MB(currMB) ? LUMA_16AC: LUMA_4x4);
-  else if (pl == PLANE_U)
-    currSE->context = (IS_I16MB(currMB) ? CB_16AC: CB_4x4);
-  else
-    currSE->context = (IS_I16MB(currMB) ? CR_16AC: CR_4x4);  
-
-  for (block_y = 0; block_y < MB_BLOCK_SIZE; block_y += BLOCK_SIZE_8x8) /* all modes */
-  {
-    for (block_x = 0; block_x < MB_BLOCK_SIZE; block_x += BLOCK_SIZE_8x8)
-    {
-      if (cbp & (1 << ((block_y >> 2) + (block_x >> 3))))  // are there any coeff in current block at all
-      {
-        read_comp_coeff_4x4_smb_CABAC (currMB, currSE, pl, block_y, block_x, start_scan, cbp_blk);
       }
     }
   }
@@ -248,7 +202,7 @@ static void read_comp_coeff_4x4_CABAC_ls (Macroblock *currMB, SyntaxElement *cur
 *    from the NAL (CABAC Mode)
 ************************************************************************
 */
-static void readCompCoeff8x8_CABAC (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl, int b8)
+static void readCompCoeff8x8_CABAC (Macroblock *currMB, SyntaxElement *currSE, DecodingEnvironmentPtr dep_dp, ColorPlane pl, int b8)
 {
   if (currMB->cbp & (1<<b8))  // are there any coefficients in the current block
   {
@@ -259,16 +213,14 @@ static void readCompCoeff8x8_CABAC (Macroblock *currMB, SyntaxElement *currSE, C
     int i,j,k;
     int level = 1;
 
-    DataPartition *dP;
     Slice *currSlice = currMB->p_Slice;
-    const byte *partMap = assignSE2partition[currSlice->dp_mode];
     int boff_x, boff_y;
 
     int64 cbp_mask = (int64) 51 << (4 * b8 - 2 * (b8 & 0x01)); // corresponds to 110011, as if all four 4x4 blocks contain coeff, shifted to block position            
     int64 *cur_cbp = &currMB->s_cbp[pl].blk;
 
     // select scan type
-    const byte (*pos_scan8x8) = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN8x8[0] : FIELD_SCAN8x8[0];
+    const byte *pos_scan8x8 = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN8x8[0] : FIELD_SCAN8x8[0];
 
     int qp_per = p_Vid->qp_per_matrix[ currMB->qp_scaled[pl] ];
     int qp_rem = p_Vid->qp_rem_matrix[ currMB->qp_scaled[pl] ];
@@ -290,14 +242,8 @@ static void readCompCoeff8x8_CABAC (Macroblock *currMB, SyntaxElement *currSE, C
     else
       currSE->context = CR_8x8;  
 
-    currSE->reading = readRunLevel_CABAC;
-
     // Read DC
-    currSE->type = ((currMB->is_intra_block == 1) ? SE_LUM_DC_INTRA : SE_LUM_DC_INTER ); // Intra or Inter?
-    dP = &(currSlice->partArr[partMap[currSE->type]]);
-
-
-    dP->readSyntaxElement(currMB, currSE, dP);
+    readRunLevel_CABAC(currMB, currSE, dep_dp);
     level = currSE->value1;
 
     //============ decode =============
@@ -310,17 +256,12 @@ static void readCompCoeff8x8_CABAC (Macroblock *currMB, SyntaxElement *currSE, C
       i = *pos_scan8x8++;
       j = *pos_scan8x8++;
 
-      tcoeffs[j][boff_x + i] = rshift_rnd_sf((level * InvLevelScale8x8[j][i]) << qp_per, 6); // dequantization
-      //tcoeffs[ j][boff_x + i] = level;
+      tcoeffs[j][boff_x + i] = currMB->is_lossless ? level : rshift_rnd_sf((level * InvLevelScale8x8[j][i]) << qp_per, 6);
 
       // AC coefficients
-      currSE->type    = ((currMB->is_intra_block == 1) ? SE_LUM_AC_INTRA : SE_LUM_AC_INTER);
-      dP = &(currSlice->partArr[partMap[currSE->type]]);
-
       for(k = 1;(k < 65) && (level != 0);++k)
       {
-
-        dP->readSyntaxElement(currMB, currSE, dP);
+        readRunLevel_CABAC(currMB, currSE, dep_dp);
         level = currSE->value1;
 
         //============ decode =============
@@ -331,344 +272,140 @@ static void readCompCoeff8x8_CABAC (Macroblock *currMB, SyntaxElement *currSE, C
           i = *pos_scan8x8++;
           j = *pos_scan8x8++;
 
-          tcoeffs[ j][boff_x + i] = rshift_rnd_sf((level * InvLevelScale8x8[j][i]) << qp_per, 6); // dequantization
-          //tcoeffs[ j][boff_x + i] = level;
+          tcoeffs[j][boff_x + i] = currMB->is_lossless ? level : rshift_rnd_sf((level * InvLevelScale8x8[j][i]) << qp_per, 6);
         }
       }
-      /*
-      for (j = 0; j < 8; j++)
-      {
-      for (i = 0; i < 8; i++)
-      {
-      if (tcoeffs[ j][boff_x + i])
-      tcoeffs[ j][boff_x + i] = rshift_rnd_sf((tcoeffs[ j][boff_x + i] * InvLevelScale8x8[j][i]) << qp_per, 6); // dequantization
-      }
-      }
-      */
     }        
   }
 }
 
+static void read_comp_coeff_8x8_MB_CABAC (Macroblock *currMB, SyntaxElement *currSE, DecodingEnvironmentPtr dep_dp, ColorPlane pl)
+{
+  readCompCoeff8x8_CABAC (currMB, currSE, dep_dp, pl, 0); 
+  readCompCoeff8x8_CABAC (currMB, currSE, dep_dp, pl, 1); 
+  readCompCoeff8x8_CABAC (currMB, currSE, dep_dp, pl, 2); 
+  readCompCoeff8x8_CABAC (currMB, currSE, dep_dp, pl, 3); 
+}
+
 /*!
 ************************************************************************
 * \brief
-*    Get coefficients (run/level) of one 8x8 block
-*    from the NAL (CABAC Mode - lossless)
+*    Common luma coefficient and pattern decoding for CABAC mode
+*    (shared across all chroma formats: 4:0:0, 4:2:0, 4:2:2, 4:4:4)
 ************************************************************************
 */
-static void readCompCoeff8x8_CABAC_lossless (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl, int b8)
+static int read_luma_coeff_CABAC(Macroblock *currMB, SyntaxElement *currSE, DecodingEnvironmentPtr dep_dp)
 {
-  if (currMB->cbp & (1<<b8))  // are there any coefficients in the current block
+  Slice *currSlice = currMB->p_Slice;
+  VideoParameters *p_Vid = currMB->p_Vid;
+  int cbp;
+  int intra = (currMB->is_intra_block == TRUE);
+
+  const byte (*pos_scan4x4)[2] = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN : FIELD_SCAN;
+
+  if (!IS_I16MB(currMB))
   {
-    VideoParameters *p_Vid = currMB->p_Vid;
+    TRACE_STRING("coded_block_pattern");
+    read_CBP_CABAC(currMB, currSE, dep_dp);
+    currMB->cbp = cbp = currSE->value1;
 
-    int **tcoeffs;
-    int i,j,k;
-    int level = 1;
+    int need_transform_size_flag = (((currMB->mb_type >= 1 && currMB->mb_type <= 3) ||
+      (IS_DIRECT(currMB) && p_Vid->active_sps->direct_8x8_inference_flag) ||
+      (currMB->NoMbPartLessThan8x8Flag))
+      && currMB->mb_type != I8MB && currMB->mb_type != I4MB
+      && (currMB->cbp & 15)
+      && currSlice->Transform8x8Mode);
 
-    DataPartition *dP;
-    Slice *currSlice = currMB->p_Slice;
-    const byte *partMap = assignSE2partition[currSlice->dp_mode];
-    int boff_x, boff_y;
-
-    int64 cbp_mask = (int64) 51 << (4 * b8 - 2 * (b8 & 0x01)); // corresponds to 110011, as if all four 4x4 blocks contain coeff, shifted to block position            
-    int64 *cur_cbp = &currMB->s_cbp[pl].blk;
-
-    // select scan type
-    const byte (*pos_scan8x8) = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN8x8[0] : FIELD_SCAN8x8[0];
-
-    // === set offset in current macroblock ===
-    boff_x = (b8&0x01) << 3;
-    boff_y = (b8 >> 1) << 3;
-    tcoeffs = &currSlice->mb_rres[pl][boff_y];
-
-    currMB->subblock_x = boff_x; // position for coeff_count ctx
-    currMB->subblock_y = boff_y; // position for coeff_count ctx
-
-    if (pl==PLANE_Y || (p_Vid->separate_colour_plane_flag != 0))  
-      currSE->context = LUMA_8x8;
-    else if (pl==PLANE_U)
-      currSE->context = CB_8x8;
-    else
-      currSE->context = CR_8x8;  
-
-    currSE->reading = readRunLevel_CABAC;
-
-    for(k=0; (k < 65) && (level != 0);++k)
+    if (need_transform_size_flag)
     {
-      //============ read =============
-      /*
-      * make distinction between INTRA and INTER coded
-      * luminance coefficients
-      */
+      TRACE_STRING("transform_size_8x8_flag");
+      readMB_transform_size_flag_CABAC(currMB, currSE, dep_dp);
+      currMB->luma_transform_size_8x8_flag = (Boolean)currSE->value1;
+    }
 
-      currSE->type    = ((currMB->is_intra_block == 1)
-        ? (k==0 ? SE_LUM_DC_INTRA : SE_LUM_AC_INTRA) 
-        : (k==0 ? SE_LUM_DC_INTER : SE_LUM_AC_INTER));
-
-
-      dP = &(currSlice->partArr[partMap[currSE->type]]);
-      currSE->reading = readRunLevel_CABAC;
-
-      dP->readSyntaxElement(currMB, currSE, dP);
-      level = currSE->value1;
-
-      //============ decode =============
-      if (level != 0)    /* leave if level == 0 */
-      {
-        pos_scan8x8 += 2 * (currSE->value2);
-
-        i = *pos_scan8x8++;
-        j = *pos_scan8x8++;
-
-        *cur_cbp |= cbp_mask;
-
-        tcoeffs[j][boff_x + i] = level;
-      }
+    if (cbp != 0)
+    {
+      read_delta_quant_cabac(currMB, currSE, dep_dp);
     }
   }
+  else
+  {
+    cbp = currMB->cbp;
+    read_delta_quant_cabac(currMB, currSE, dep_dp);
+
+    const byte *pos_scan_4x4 = pos_scan4x4[0];
+    int **cof = currSlice->cof[0];
+    currSE->context = LUMA_16DC;
+
+    int level = 1;
+    for (int k = 0; (k < 17) && (level != 0); ++k)
+    {
+      readRunLevel_CABAC(currMB, currSE, dep_dp);
+      level = currSE->value1;
+
+      if (level != 0)
+      {
+        pos_scan_4x4 += (2 * currSE->value2);
+        int i0 = ((*pos_scan_4x4++) << 2);
+        int j0 = ((*pos_scan_4x4++) << 2);
+        cof[j0][i0] = level;
+      }
+    }
+
+    if (currMB->is_lossless == FALSE)
+      itrans_2(currMB, (ColorPlane)currSlice->colour_plane_id);
+  }
+
+  update_qp(currMB, currSlice->qp);
+
+  int qp_per = p_Vid->qp_per_matrix[currMB->qp_scaled[currSlice->colour_plane_id]];
+  int qp_rem = p_Vid->qp_rem_matrix[currMB->qp_scaled[currSlice->colour_plane_id]];
+
+  if (cbp)
+  {
+    if (currMB->luma_transform_size_8x8_flag)
+    {
+      read_comp_coeff_8x8_MB_CABAC(currMB, currSE, dep_dp, PLANE_Y);
+    }
+    else
+    {
+      int (*InvLevelScale4x4)[4] = intra ? currSlice->InvLevelScale4x4_Intra[currSlice->colour_plane_id][qp_rem] : currSlice->InvLevelScale4x4_Inter[currSlice->colour_plane_id][qp_rem];
+      read_comp_coeff_4x4_CABAC(currMB, currSE, dep_dp, PLANE_Y, InvLevelScale4x4, qp_per, cbp);
+    }
+  }
+
+  return cbp;
 }
-
-
-/*!
-************************************************************************
-* \brief
-*    Get coefficients (run/level) of 8x8 blocks in a MB
-*    from the NAL (CABAC Mode)
-************************************************************************
-*/
-static void read_comp_coeff_8x8_MB_CABAC (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl)
-{
-  //======= 8x8 transform size & CABAC ========
-  readCompCoeff8x8_CABAC (currMB, currSE, pl, 0); 
-  readCompCoeff8x8_CABAC (currMB, currSE, pl, 1); 
-  readCompCoeff8x8_CABAC (currMB, currSE, pl, 2); 
-  readCompCoeff8x8_CABAC (currMB, currSE, pl, 3); 
-}
-
-
-/*!
-************************************************************************
-* \brief
-*    Get coefficients (run/level) of 8x8 blocks in a MB
-*    from the NAL (CABAC Mode)
-************************************************************************
-*/
-static void read_comp_coeff_8x8_MB_CABAC_ls (Macroblock *currMB, SyntaxElement *currSE, ColorPlane pl)
-{
-  //======= 8x8 transform size & CABAC ========
-  readCompCoeff8x8_CABAC_lossless (currMB, currSE, pl, 0); 
-  readCompCoeff8x8_CABAC_lossless (currMB, currSE, pl, 1); 
-  readCompCoeff8x8_CABAC_lossless (currMB, currSE, pl, 2); 
-  readCompCoeff8x8_CABAC_lossless (currMB, currSE, pl, 3); 
-}
-
 
 /*!
  ************************************************************************
  * \brief
  *    Get coded block pattern and coefficients (run/level)
- *    from the NAL
+ *    from the NAL (YUV 4:2:0)
  ************************************************************************
  */
 static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
 {
-  int i,j;
+  int i;
   int level;
-  int cbp;
-  SyntaxElement currSE;
-  DataPartition *dP = NULL;
-  Slice *currSlice = currMB->p_Slice;
-  const byte *partMap = assignSE2partition[currSlice->dp_mode];
-  int i0, j0;
-
-  int qp_per, qp_rem;
-  VideoParameters *p_Vid = currMB->p_Vid;
-  int smb = ((p_Vid->type==SP_SLICE) && (currMB->is_intra_block == FALSE)) || (p_Vid->type == SI_SLICE && currMB->mb_type == SI4MB);
-
   int qp_per_uv[2];
   int qp_rem_uv[2];
+  SyntaxElement currSE;
+  Slice *currSlice = currMB->p_Slice;
+  VideoParameters *p_Vid = currMB->p_Vid;
+  DataPartition *dP = &(currSlice->partArr[0]);
+  DecodingEnvironmentPtr dep_dp = &(dP->de_cabac);
 
   int intra = (currMB->is_intra_block == TRUE);  
-
+  int smb = ((p_Vid->type==SP_SLICE) && (currMB->is_intra_block == FALSE)) || (p_Vid->type == SI_SLICE && currMB->mb_type == SI4MB);
   StorablePicture *dec_picture = currSlice->dec_picture;
   int yuv = dec_picture->chroma_format_idc - 1;
 
   int (*InvLevelScale4x4)[4] = NULL;
-
-  // select scan type
   const byte (*pos_scan4x4)[2] = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN : FIELD_SCAN;
-  const byte *pos_scan_4x4 = pos_scan4x4[0];
+  const byte *pos_scan_4x4;
 
-  if (!IS_I16MB (currMB))
-  {
-    int need_transform_size_flag;
-    //=====   C B P   =====
-    //---------------------
-    currSE.type = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB) 
-      ? SE_CBP_INTRA
-      : SE_CBP_INTER;
-
-    dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-    if (dP->bitstream->ei_flag)
-    {
-      currSE.mapping = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB)
-        ? currSlice->linfo_cbp_intra
-        : currSlice->linfo_cbp_inter;
-    }
-    else
-    {
-      currSE.reading = read_CBP_CABAC;
-    }
-
-    TRACE_STRING("coded_block_pattern");
-    dP->readSyntaxElement(currMB, &currSE, dP);
-    currMB->cbp = cbp = currSE.value1;
-
-    //============= Transform size flag for INTER MBs =============
-    //-------------------------------------------------------------
-    need_transform_size_flag = (((currMB->mb_type >= 1 && currMB->mb_type <= 3)||
-      (IS_DIRECT(currMB) && p_Vid->active_sps->direct_8x8_inference_flag) ||
-      (currMB->NoMbPartLessThan8x8Flag))
-      && currMB->mb_type != I8MB && currMB->mb_type != I4MB
-      && (currMB->cbp&15)
-      && currSlice->Transform8x8Mode);
-
-    if (need_transform_size_flag)
-    {
-      currSE.type   =  SE_HEADER;
-      dP = &(currSlice->partArr[partMap[SE_HEADER]]);
-      currSE.reading = readMB_transform_size_flag_CABAC;
-      TRACE_STRING("transform_size_8x8_flag");
-
-      // read CAVLC transform_size_8x8_flag
-      if (dP->bitstream->ei_flag)
-      {
-        currSE.len = 1;
-        readSyntaxElement_FLC(&currSE, dP->bitstream);
-      } 
-      else
-      {
-        dP->readSyntaxElement(currMB, &currSE, dP);
-      }
-      currMB->luma_transform_size_8x8_flag = (Boolean) currSE.value1;
-    }
-
-    //=====   DQUANT   =====
-    //----------------------
-    // Delta quant only if nonzero coeffs
-    if (cbp !=0)
-    {
-      read_delta_quant(&currSE, dP, currMB, partMap, ((currMB->is_intra_block == FALSE)) ? SE_DELTA_QUANT_INTER : SE_DELTA_QUANT_INTRA);
-
-      if (currSlice->dp_mode)
-      {
-        if ((currMB->is_intra_block == FALSE) && currSlice->dpC_NotPresent ) 
-          currMB->dpl_flag = 1;
-
-        if( intra && currSlice->dpB_NotPresent )
-        {
-          currMB->ei_flag = 1;
-          currMB->dpl_flag = 1;
-        }
-
-        // check for prediction from neighbours
-        check_dp_neighbors (currMB);
-        if (currMB->dpl_flag)
-        {
-          cbp = 0; 
-          currMB->cbp = cbp;
-        }
-      }
-    }
-  }
-  else // read DC coeffs for new intra modes
-  {
-    cbp = currMB->cbp;
-  
-    read_delta_quant(&currSE, dP, currMB, partMap, SE_DELTA_QUANT_INTRA);
-
-    if (currSlice->dp_mode)
-    {  
-      if (currSlice->dpB_NotPresent)
-      {
-        currMB->ei_flag  = 1;
-        currMB->dpl_flag = 1;
-      }
-      check_dp_neighbors (currMB);
-      if (currMB->dpl_flag)
-      {
-        currMB->cbp = cbp = 0; 
-      }
-    }
-
-    if (!currMB->dpl_flag)
-    {
-      int **cof = currSlice->cof[0];
-      int k;
-      pos_scan_4x4 = pos_scan4x4[0];
-
-      currSE.type = SE_LUM_DC_INTRA;
-      dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-      currSE.context      = LUMA_16DC;
-      currSE.type         = SE_LUM_DC_INTRA;
-
-      if (dP->bitstream->ei_flag)
-      {
-        currSE.mapping = linfo_levrun_inter;
-      }
-      else
-      {
-        currSE.reading = readRunLevel_CABAC;
-      }
-
-      level = 1;                            // just to get inside the loop
-
-      for(k = 0; (k < 17) && (level != 0); ++k)
-      {
-        dP->readSyntaxElement(currMB, &currSE, dP);
-        level = currSE.value1;
-
-        if (level != 0)    /* leave if level == 0 */
-        {
-          pos_scan_4x4 += (2 * currSE.value2);
-
-          i0 = ((*pos_scan_4x4++) << 2);
-          j0 = ((*pos_scan_4x4++) << 2);
-
-          cof[j0][i0] = level;// add new intra DC coeff
-          //currSlice->fcf[0][j0][i0] = level;// add new intra DC coeff
-        }
-      }
-
-      if(currMB->is_lossless == FALSE)
-        itrans_2(currMB, (ColorPlane) currSlice->colour_plane_id);// transform new intra DC
-    }
-  }
-
-  update_qp(currMB, currSlice->qp);
-
-  qp_per = p_Vid->qp_per_matrix[ currMB->qp_scaled[currSlice->colour_plane_id] ];
-  qp_rem = p_Vid->qp_rem_matrix[ currMB->qp_scaled[currSlice->colour_plane_id] ];
-
-  // luma coefficients
-  //======= Other Modes & CABAC ========
-  //------------------------------------          
-  if (cbp)
-  {
-    if(currMB->luma_transform_size_8x8_flag) 
-    {
-      //======= 8x8 transform size & CABAC ========
-      currMB->read_comp_coeff_8x8_CABAC (currMB, &currSE, PLANE_Y); 
-    }
-    else
-    {
-      InvLevelScale4x4 = intra? currSlice->InvLevelScale4x4_Intra[currSlice->colour_plane_id][qp_rem] : currSlice->InvLevelScale4x4_Inter[currSlice->colour_plane_id][qp_rem];
-      currMB->read_comp_coeff_4x4_CABAC (currMB, &currSE, PLANE_Y, InvLevelScale4x4, qp_per, cbp);        
-    }
-  }
+  int cbp = read_luma_coeff_CABAC(currMB, &currSE, dep_dp);
 
   //init quant parameters for chroma 
   for(i=0; i < 2; ++i)
@@ -697,19 +434,10 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
       level = 1;
       currMB->is_v_block  = ll;
       currSE.context      = CHROMA_DC;
-      currSE.type         = (intra ? SE_CHR_DC_INTRA : SE_CHR_DC_INTER);
-
-      dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-      if (dP->bitstream->ei_flag)
-        currSE.mapping = linfo_levrun_c2x2;
-      else
-        currSE.reading = readRunLevel_CABAC;
 
       for(k = 0; (k < (p_Vid->num_cdc_coeff + 1))&&(level!=0);++k)
       {
-
-        dP->readSyntaxElement(currMB, &currSE, dP);
+        readRunLevel_CABAC(currMB, &currSE, dep_dp);
         level = currSE.value1;
 
         if (level != 0)
@@ -717,19 +445,10 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
           s_cbp->blk |= 0xf0000 << (ll<<1) ;
           coef_ctr += currSE.value2 + 1;
 
-          // Bug: currSlice->cofu has only 4 entries, hence coef_ctr MUST be <4 (which is
-          // caught by the assert().  If it is bigger than 4, it starts patching the
-          // p_Vid->predmode pointer, which leads to bugs later on.
-          //
-          // This assert() should be left in the code, because it captures a very likely
-          // bug early when testing in error prone environments (or when testing NAL
-          // functionality).
-
           assert (coef_ctr < p_Vid->num_cdc_coeff);
           currSlice->cofu[coef_ctr] = level;
         }
       }
-
 
       if (smb || (currMB->is_lossless == TRUE)) // check to see if MB type is SPred or SIntra4x4
       {        
@@ -737,10 +456,6 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
         currSlice->cof[uv + 1][0][4] = currSlice->cofu[1];
         currSlice->cof[uv + 1][4][0] = currSlice->cofu[2];
         currSlice->cof[uv + 1][4][4] = currSlice->cofu[3];
-        //currSlice->fcf[uv + 1][0][0] = currSlice->cofu[0];
-        //currSlice->fcf[uv + 1][4][0] = currSlice->cofu[1];
-        //currSlice->fcf[uv + 1][0][4] = currSlice->cofu[2];
-        //currSlice->fcf[uv + 1][4][4] = currSlice->cofu[3];
       }
       else
       {
@@ -749,11 +464,6 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
         int **cof = currSlice->cof[uv + 1];
 
         ihadamard2x2(currSlice->cofu, temp);
-        
-        //currSlice->fcf[uv + 1][0][0] = temp[0];
-        //currSlice->fcf[uv + 1][0][4] = temp[1];
-        //currSlice->fcf[uv + 1][4][0] = temp[2];
-        //currSlice->fcf[uv + 1][4][4] = temp[3];
 
         cof[0][0] = (((temp[0] * scale_dc) << qp_per_uv[uv]) >> 5);
         cof[0][4] = (((temp[1] * scale_dc) << qp_per_uv[uv]) >> 5);
@@ -769,14 +479,6 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
   if (cbp >31)
   {
     currSE.context      = CHROMA_AC;
-    currSE.type         = (currMB->is_intra_block ? SE_CHR_AC_INTRA : SE_CHR_AC_INTER);
-
-    dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-    if (dP->bitstream->ei_flag)
-      currSE.mapping = linfo_levrun_inter;
-    else
-      currSE.reading = readRunLevel_CABAC;
 
     if(currMB->is_lossless == FALSE)
     {
@@ -791,8 +493,9 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
 
         for (b4 = 0; b4 < 4; ++b4)
         {
-          i = cofuv_blk_x[yuv][b8][b4];
-          j = cofuv_blk_y[yuv][b8][b4];
+          int i0, j0;
+          int blk_x = cofuv_blk_x[yuv][b8][b4];
+          int blk_y = cofuv_blk_y[yuv][b8][b4];
 
           currMB->subblock_y = subblk_offset_y[yuv][b8][b4];
           currMB->subblock_x = subblk_offset_x[yuv][b8][b4];
@@ -802,8 +505,7 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
 
           for(k = 0; (k < 16) && (level != 0);++k)
           {
-
-            dP->readSyntaxElement(currMB, &currSE, dP);
+            readRunLevel_CABAC(currMB, &currSE, dep_dp);
             level = currSE.value1;
 
             if (level != 0)
@@ -814,10 +516,9 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
               i0 = *pos_scan_4x4++;
               j0 = *pos_scan_4x4++;
 
-              cof[(j<<2) + j0][(i<<2) + i0] = rshift_rnd_sf((level * InvLevelScale4x4[j0][i0])<<qp_per_uv[uv], 4);
-              //currSlice->fcf[uv + 1][(j<<2) + j0][(i<<2) + i0] = level;
+              cof[(blk_y<<2) + j0][(blk_x<<2) + i0] = rshift_rnd_sf((level * InvLevelScale4x4[j0][i0])<<qp_per_uv[uv], 4);
             }
-          } //for(k=0;(k<16)&&(level!=0);++k)
+          }
         }
       }
     }
@@ -832,8 +533,9 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
 
         for (b4=0; b4 < 4; ++b4)
         {
-          i = cofuv_blk_x[yuv][b8][b4];
-          j = cofuv_blk_y[yuv][b8][b4];
+          int i0, j0;
+          int blk_x = cofuv_blk_x[yuv][b8][b4];
+          int blk_y = cofuv_blk_y[yuv][b8][b4];
 
           pos_scan_4x4 = pos_scan4x4[1];
           level=1;
@@ -843,7 +545,7 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
 
           for(k=0;(k<16)&&(level!=0);++k)
           {
-            dP->readSyntaxElement(currMB, &currSE, dP);
+            readRunLevel_CABAC(currMB, &currSE, dep_dp);
             level = currSE.value1;
 
             if (level != 0)
@@ -854,487 +556,90 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_420(Macroblock *currMB)
               i0 = *pos_scan_4x4++;
               j0 = *pos_scan_4x4++;
 
-              currSlice->cof[uv + 1][(j<<2) + j0][(i<<2) + i0] = level;
-              //currSlice->fcf[uv + 1][(j<<2) + j0][(i<<2) + i0] = level;
+              currSlice->cof[uv + 1][(blk_y<<2) + j0][(blk_x<<2) + i0] = level;
             }
           } 
         }
       } 
-    } //for (b4=0; b4 < 4; b4++)      
+    }     
   }  
 }
-
 
 /*!
  ************************************************************************
  * \brief
  *    Get coded block pattern and coefficients (run/level)
- *    from the NAL
+ *    from the NAL (YUV 4:0:0 monochrome)
  ************************************************************************
  */
 static void read_CBP_and_coeffs_from_NAL_CABAC_400(Macroblock *currMB)
 {
-  int k;
-  int level;
-  int cbp;
   SyntaxElement currSE;
-  DataPartition *dP = NULL;
   Slice *currSlice = currMB->p_Slice;
-  const byte *partMap = assignSE2partition[currSlice->dp_mode];
-  int i0, j0;
+  DataPartition *dP = &(currSlice->partArr[0]);
+  DecodingEnvironmentPtr dep_dp = &(dP->de_cabac);
 
-  int qp_per, qp_rem;
-  VideoParameters *p_Vid = currMB->p_Vid;
-
-  int intra = (currMB->is_intra_block == TRUE);
-
-  int need_transform_size_flag;
-
-  int (*InvLevelScale4x4)[4] = NULL;
-  // select scan type
-  const byte (*pos_scan4x4)[2] = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN : FIELD_SCAN;
-  const byte *pos_scan_4x4 = pos_scan4x4[0];
-
-
-  // read CBP if not new intra mode
-  if (!IS_I16MB (currMB))
-  {
-    //=====   C B P   =====
-    //---------------------
-    currSE.type = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB) 
-      ? SE_CBP_INTRA
-      : SE_CBP_INTER;
-
-    dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-    if (dP->bitstream->ei_flag)
-    {
-      currSE.mapping = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB)
-        ? currSlice->linfo_cbp_intra
-        : currSlice->linfo_cbp_inter;
-    }
-    else
-    {
-      currSE.reading = read_CBP_CABAC;
-    }
-
-    TRACE_STRING("coded_block_pattern");
-    dP->readSyntaxElement(currMB, &currSE, dP);
-    currMB->cbp = cbp = currSE.value1;
-
-
-    //============= Transform size flag for INTER MBs =============
-    //-------------------------------------------------------------
-    need_transform_size_flag = (((currMB->mb_type >= 1 && currMB->mb_type <= 3)||
-      (IS_DIRECT(currMB) && p_Vid->active_sps->direct_8x8_inference_flag) ||
-      (currMB->NoMbPartLessThan8x8Flag))
-      && currMB->mb_type != I8MB && currMB->mb_type != I4MB
-      && (currMB->cbp&15)
-      && currSlice->Transform8x8Mode);
-
-    if (need_transform_size_flag)
-    {
-      currSE.type   =  SE_HEADER;
-      dP = &(currSlice->partArr[partMap[SE_HEADER]]);
-      currSE.reading = readMB_transform_size_flag_CABAC;
-      TRACE_STRING("transform_size_8x8_flag");
-
-      // read CAVLC transform_size_8x8_flag
-      if (dP->bitstream->ei_flag)
-      {
-        currSE.len = 1;
-        readSyntaxElement_FLC(&currSE, dP->bitstream);
-      } 
-      else
-      {
-        dP->readSyntaxElement(currMB, &currSE, dP);
-      }
-      currMB->luma_transform_size_8x8_flag = (Boolean) currSE.value1;
-    }
-
-    //=====   DQUANT   =====
-    //----------------------
-    // Delta quant only if nonzero coeffs
-    if (cbp !=0)
-    {
-      read_delta_quant(&currSE, dP, currMB, partMap, ((currMB->is_intra_block == FALSE)) ? SE_DELTA_QUANT_INTER : SE_DELTA_QUANT_INTRA);
-
-      if (currSlice->dp_mode)
-      {
-        if ((currMB->is_intra_block == FALSE) && currSlice->dpC_NotPresent ) 
-          currMB->dpl_flag = 1;
-
-        if( intra && currSlice->dpB_NotPresent )
-        {
-          currMB->ei_flag = 1;
-          currMB->dpl_flag = 1;
-        }
-
-        // check for prediction from neighbours
-        check_dp_neighbors (currMB);
-        if (currMB->dpl_flag)
-        {
-          cbp = 0; 
-          currMB->cbp = cbp;
-        }
-      }
-    }
-  }
-  else // read DC coeffs for new intra modes
-  {
-    cbp = currMB->cbp;  
-    read_delta_quant(&currSE, dP, currMB, partMap, SE_DELTA_QUANT_INTRA);
-
-    if (currSlice->dp_mode)
-    {  
-      if (currSlice->dpB_NotPresent)
-      {
-        currMB->ei_flag  = 1;
-        currMB->dpl_flag = 1;
-      }
-      check_dp_neighbors (currMB);
-      if (currMB->dpl_flag)
-      {
-        currMB->cbp = cbp = 0; 
-      }
-    }
-
-    if (!currMB->dpl_flag)
-    {
-      pos_scan_4x4 = pos_scan4x4[0];
-
-      {
-        currSE.type = SE_LUM_DC_INTRA;
-        dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-        currSE.context      = LUMA_16DC;
-        currSE.type         = SE_LUM_DC_INTRA;
-
-        if (dP->bitstream->ei_flag)
-        {
-          currSE.mapping = linfo_levrun_inter;
-        }
-        else
-        {
-          currSE.reading = readRunLevel_CABAC;
-        }
-
-        level = 1;                            // just to get inside the loop
-
-        for(k = 0; (k < 17) && (level != 0); ++k)
-        {
-          dP->readSyntaxElement(currMB, &currSE, dP);
-          level = currSE.value1;
-
-          if (level != 0)    /* leave if level == 0 */
-          {
-            pos_scan_4x4 += (2 * currSE.value2);
-
-            i0 = ((*pos_scan_4x4++) << 2);
-            j0 = ((*pos_scan_4x4++) << 2);
-
-            currSlice->cof[0][j0][i0] = level;// add new intra DC coeff
-            //currSlice->fcf[0][j0][i0] = level;// add new intra DC coeff
-          }
-        }
-      }
-
-      if(currMB->is_lossless == FALSE)
-        itrans_2(currMB, (ColorPlane) currSlice->colour_plane_id);// transform new intra DC
-    }
-  }
-
-  update_qp(currMB, currSlice->qp);
-
-  qp_per = p_Vid->qp_per_matrix[ currMB->qp_scaled[PLANE_Y] ];
-  qp_rem = p_Vid->qp_rem_matrix[ currMB->qp_scaled[PLANE_Y] ];
-
-  //======= Other Modes & CABAC ========
-  //------------------------------------          
-  if (cbp)
-  {
-    if(currMB->luma_transform_size_8x8_flag) 
-    {
-      //======= 8x8 transform size & CABAC ========
-      currMB->read_comp_coeff_8x8_CABAC (currMB, &currSE, PLANE_Y); 
-    }
-    else
-    {
-      InvLevelScale4x4 = intra? currSlice->InvLevelScale4x4_Intra[currSlice->colour_plane_id][qp_rem] : currSlice->InvLevelScale4x4_Inter[currSlice->colour_plane_id][qp_rem];
-      currMB->read_comp_coeff_4x4_CABAC (currMB, &currSE, PLANE_Y, InvLevelScale4x4, qp_per, cbp);        
-    }
-  }  
+  read_luma_coeff_CABAC(currMB, &currSE, dep_dp);
 }
 
 /*!
  ************************************************************************
  * \brief
  *    Get coded block pattern and coefficients (run/level)
- *    from the NAL
+ *    from the NAL (YUV 4:4:4)
  ************************************************************************
  */
 static void read_CBP_and_coeffs_from_NAL_CABAC_444(Macroblock *currMB)
 {
-  int i, k;
+  int k;
   int level;
-  int cbp;
-  SyntaxElement currSE;
-  DataPartition *dP = NULL;
-  Slice *currSlice = currMB->p_Slice;
-  const byte *partMap = assignSE2partition[currSlice->dp_mode];
-  int coef_ctr, i0, j0;
-
   int qp_per, qp_rem;
-  VideoParameters *p_Vid = currMB->p_Vid;
-
-  int uv; 
   int qp_per_uv[2];
   int qp_rem_uv[2];
+  int uv;
+  int coef_ctr;
+  int i0, j0;
+
+  SyntaxElement currSE;
+  Slice *currSlice = currMB->p_Slice;
+  DataPartition *dP = &(currSlice->partArr[0]);
+  DecodingEnvironmentPtr dep_dp = &(dP->de_cabac);
+  VideoParameters *p_Vid = currMB->p_Vid;
 
   int intra = (currMB->is_intra_block == TRUE);
 
-
-  int need_transform_size_flag;
-
   int (*InvLevelScale4x4)[4] = NULL;
-  // select scan type
   const byte (*pos_scan4x4)[2] = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN : FIELD_SCAN;
-  const byte *pos_scan_4x4 = pos_scan4x4[0];
 
-  // QPI
-  //init constants for every chroma qp offset
-  for (i=0; i<2; ++i)
-  {
-    qp_per_uv[i] = p_Vid->qp_per_matrix[ currMB->qp_scaled[i + 1] ];
-    qp_rem_uv[i] = p_Vid->qp_rem_matrix[ currMB->qp_scaled[i + 1] ];
-  }
-
-
-  // read CBP if not new intra mode
-  if (!IS_I16MB (currMB))
-  {
-    //=====   C B P   =====
-    //---------------------
-    currSE.type = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB) 
-      ? SE_CBP_INTRA
-      : SE_CBP_INTER;
-
-    dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-    if (dP->bitstream->ei_flag)
-    {
-      currSE.mapping = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB)
-        ? currSlice->linfo_cbp_intra
-        : currSlice->linfo_cbp_inter;
-    }
-    else
-    {
-      currSE.reading = read_CBP_CABAC;
-    }
-
-    TRACE_STRING("coded_block_pattern");
-    dP->readSyntaxElement(currMB, &currSE, dP);
-    currMB->cbp = cbp = currSE.value1;
-
-
-    //============= Transform size flag for INTER MBs =============
-    //-------------------------------------------------------------
-    need_transform_size_flag = (((currMB->mb_type >= 1 && currMB->mb_type <= 3)||
-      (IS_DIRECT(currMB) && p_Vid->active_sps->direct_8x8_inference_flag) ||
-      (currMB->NoMbPartLessThan8x8Flag))
-      && currMB->mb_type != I8MB && currMB->mb_type != I4MB
-      && (currMB->cbp&15)
-      && currSlice->Transform8x8Mode);
-
-    if (need_transform_size_flag)
-    {
-      currSE.type   =  SE_HEADER;
-      dP = &(currSlice->partArr[partMap[SE_HEADER]]);
-      currSE.reading = readMB_transform_size_flag_CABAC;
-      TRACE_STRING("transform_size_8x8_flag");
-
-      // read CAVLC transform_size_8x8_flag
-      if (dP->bitstream->ei_flag)
-      {
-        currSE.len = 1;
-        readSyntaxElement_FLC(&currSE, dP->bitstream);
-      } 
-      else
-      {
-        dP->readSyntaxElement(currMB, &currSE, dP);
-      }
-      currMB->luma_transform_size_8x8_flag = (Boolean) currSE.value1;
-    }
-
-    //=====   DQUANT   =====
-    //----------------------
-    // Delta quant only if nonzero coeffs
-    if (cbp !=0)
-    {
-      read_delta_quant(&currSE, dP, currMB, partMap, ((currMB->is_intra_block == FALSE)) ? SE_DELTA_QUANT_INTER : SE_DELTA_QUANT_INTRA);
-
-      if (currSlice->dp_mode)
-      {
-        if ((currMB->is_intra_block == FALSE) && currSlice->dpC_NotPresent ) 
-          currMB->dpl_flag = 1;
-
-        if( intra && currSlice->dpB_NotPresent )
-        {
-          currMB->ei_flag = 1;
-          currMB->dpl_flag = 1;
-        }
-
-        // check for prediction from neighbours
-        check_dp_neighbors (currMB);
-        if (currMB->dpl_flag)
-        {
-          cbp = 0; 
-          currMB->cbp = cbp;
-        }
-      }
-    }
-  }
-  else // read DC coeffs for new intra modes
-  {
-    cbp = currMB->cbp;
-  
-    read_delta_quant(&currSE, dP, currMB, partMap, SE_DELTA_QUANT_INTRA);
-
-    if (currSlice->dp_mode)
-    {  
-      if (currSlice->dpB_NotPresent)
-      {
-        currMB->ei_flag  = 1;
-        currMB->dpl_flag = 1;
-      }
-      check_dp_neighbors (currMB);
-      if (currMB->dpl_flag)
-      {
-        currMB->cbp = cbp = 0; 
-      }
-    }
-
-    if (!currMB->dpl_flag)
-    {
-      pos_scan_4x4 = pos_scan4x4[0];
-
-      {
-        currSE.type = SE_LUM_DC_INTRA;
-        dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-        currSE.context      = LUMA_16DC;
-        currSE.type         = SE_LUM_DC_INTRA;
-
-        if (dP->bitstream->ei_flag)
-        {
-          currSE.mapping = linfo_levrun_inter;
-        }
-        else
-        {
-          currSE.reading = readRunLevel_CABAC;
-        }
-
-        level = 1;                            // just to get inside the loop
-
-        for(k = 0; (k < 17) && (level != 0); ++k)
-        {
-          dP->readSyntaxElement(currMB, &currSE, dP);
-          level = currSE.value1;
-
-          if (level != 0)    /* leave if level == 0 */
-          {
-            pos_scan_4x4 += (2 * currSE.value2);
-
-            i0 = ((*pos_scan_4x4++) << 2);
-            j0 = ((*pos_scan_4x4++) << 2);
-
-            currSlice->cof[0][j0][i0] = level;// add new intra DC coeff
-            //currSlice->fcf[0][j0][i0] = level;// add new intra DC coeff
-          }
-        }
-      }
-
-      if(currMB->is_lossless == FALSE)
-        itrans_2(currMB, (ColorPlane) currSlice->colour_plane_id);// transform new intra DC
-    }
-  }
-
-  update_qp(currMB, currSlice->qp);
-
-  qp_per = p_Vid->qp_per_matrix[ currMB->qp_scaled[currSlice->colour_plane_id] ];
-  qp_rem = p_Vid->qp_rem_matrix[ currMB->qp_scaled[currSlice->colour_plane_id] ];
-
-  //init quant parameters for chroma 
-  for(i=0; i < 2; ++i)
-  {
-    qp_per_uv[i] = p_Vid->qp_per_matrix[ currMB->qp_scaled[i + 1] ];
-    qp_rem_uv[i] = p_Vid->qp_rem_matrix[ currMB->qp_scaled[i + 1] ];
-  }
-
-
-  InvLevelScale4x4 = intra? currSlice->InvLevelScale4x4_Intra[currSlice->colour_plane_id][qp_rem] : currSlice->InvLevelScale4x4_Inter[currSlice->colour_plane_id][qp_rem];
-
-  // luma coefficients
-  {
-    //======= Other Modes & CABAC ========
-    //------------------------------------          
-    if (cbp)
-    {
-      if(currMB->luma_transform_size_8x8_flag) 
-      {
-        //======= 8x8 transform size & CABAC ========
-        currMB->read_comp_coeff_8x8_CABAC (currMB, &currSE, PLANE_Y); 
-      }
-      else
-      {
-        currMB->read_comp_coeff_4x4_CABAC (currMB, &currSE, PLANE_Y, InvLevelScale4x4, qp_per, cbp);        
-      }
-    }
-  }
+  int cbp = read_luma_coeff_CABAC(currMB, &currSE, dep_dp);
 
   for (uv = 0; uv < 2; ++uv )
   {
     /*----------------------16x16DC Luma_Add----------------------*/
     if (IS_I16MB (currMB)) // read DC coeffs for new intra modes       
     {
-      {              
-        currSE.type = SE_LUM_DC_INTRA;
-        dP = &(currSlice->partArr[partMap[currSE.type]]);
+      if( (p_Vid->separate_colour_plane_flag != 0) )
+        currSE.context = LUMA_16DC; 
+      else
+        currSE.context = (uv==0) ? CB_16DC : CR_16DC;
 
-        if( (p_Vid->separate_colour_plane_flag != 0) )
-          currSE.context = LUMA_16DC; 
-        else
-          currSE.context = (uv==0) ? CB_16DC : CR_16DC;
+      coef_ctr = -1;
+      level = 1;                            // just to get inside the loop
 
-        if (dP->bitstream->ei_flag)
+      for(k=0;(k<17) && (level!=0);++k)
+      {
+        readRunLevel_CABAC(currMB, &currSE, dep_dp);
+        level = currSE.value1;
+
+        if (level != 0)                     // leave if level == 0
         {
-          currSE.mapping = linfo_levrun_inter;
-        }
-        else
-        {
-          currSE.reading = readRunLevel_CABAC;
-        }
+          coef_ctr += currSE.value2 + 1;
 
-        coef_ctr = -1;
-        level = 1;                            // just to get inside the loop
-
-        for(k=0;(k<17) && (level!=0);++k)
-        {
-
-          dP->readSyntaxElement(currMB, &currSE, dP);
-          level = currSE.value1;
-
-          if (level != 0)                     // leave if level == 0
-          {
-            coef_ctr += currSE.value2 + 1;
-
-            i0 = pos_scan4x4[coef_ctr][0];
-            j0 = pos_scan4x4[coef_ctr][1];
-            currSlice->cof[uv + 1][j0<<2][i0<<2] = level;
-            //currSlice->fcf[uv + 1][j0<<2][i0<<2] = level;
-          }                        
-        } //k loop
-      } // else CAVLC
+          i0 = pos_scan4x4[coef_ctr][0];
+          j0 = pos_scan4x4[coef_ctr][1];
+          currSlice->cof[uv + 1][j0<<2][i0<<2] = level;
+        }                        
+      } //k loop
 
       if(currMB->is_lossless == FALSE)
       {
@@ -1353,18 +658,16 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_444(Macroblock *currMB)
 
     InvLevelScale4x4 = intra? currSlice->InvLevelScale4x4_Intra[uv + 1][qp_rem_uv[uv]] : currSlice->InvLevelScale4x4_Inter[uv + 1][qp_rem_uv[uv]];
 
-    {  
-      if (cbp)
+    if (cbp)
+    {
+      if(currMB->luma_transform_size_8x8_flag) 
       {
-        if(currMB->luma_transform_size_8x8_flag) 
-        {
-          //======= 8x8 transform size & CABAC ========
-          currMB->read_comp_coeff_8x8_CABAC (currMB, &currSE, (ColorPlane) (PLANE_U + uv)); 
-        }
-        else //4x4
-        {        
-          currMB->read_comp_coeff_4x4_CABAC (currMB, &currSE, (ColorPlane) (PLANE_U + uv), InvLevelScale4x4,  qp_per_uv[uv], cbp);
-        }
+        //======= 8x8 transform size & CABAC ========
+        read_comp_coeff_8x8_MB_CABAC (currMB, &currSE, dep_dp, (ColorPlane) (PLANE_U + uv)); 
+      }
+      else //4x4
+      {        
+        read_comp_coeff_4x4_CABAC (currMB, &currSE, dep_dp, (ColorPlane) (PLANE_U + uv), InvLevelScale4x4,  qp_per_uv[uv], cbp);
       }
     }
   } 
@@ -1374,229 +677,42 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_444(Macroblock *currMB)
  ************************************************************************
  * \brief
  *    Get coded block pattern and coefficients (run/level)
- *    from the NAL
+ *    from the NAL (YUV 4:2:2)
  ************************************************************************
  */
 static void read_CBP_and_coeffs_from_NAL_CABAC_422(Macroblock *currMB)
 {
   int i,j,k;
   int level;
-  int cbp;
-  SyntaxElement currSE;
-  DataPartition *dP = NULL;
-  Slice *currSlice = currMB->p_Slice;
-  const byte *partMap = assignSE2partition[currSlice->dp_mode];
-  int coef_ctr, i0, j0, b8;
-  int ll;
-
-  int qp_per, qp_rem;
-  VideoParameters *p_Vid = currMB->p_Vid;
-
-  int uv; 
   int qp_per_uv[2];
   int qp_rem_uv[2];
-
-  int intra = (currMB->is_intra_block == TRUE);
-
-  int b4;
-  StorablePicture *dec_picture = currSlice->dec_picture;
-  int yuv = dec_picture->chroma_format_idc - 1;
+  int uv;
+  int coef_ctr;
+  int i0, j0;
+  int ll;
   int m6[4];
 
-  int need_transform_size_flag;
+  SyntaxElement currSE;
+  Slice *currSlice = currMB->p_Slice;
+  DataPartition *dP = &(currSlice->partArr[0]);
+  DecodingEnvironmentPtr dep_dp = &(dP->de_cabac);
+  VideoParameters *p_Vid = currMB->p_Vid;
+
+  int intra = (currMB->is_intra_block == TRUE);
+  StorablePicture *dec_picture = currSlice->dec_picture;
+  int yuv = dec_picture->chroma_format_idc - 1;
 
   int (*InvLevelScale4x4)[4] = NULL;
-  // select scan type
   const byte (*pos_scan4x4)[2] = ((currSlice->structure == FRAME) && (!currMB->mb_field)) ? SNGL_SCAN : FIELD_SCAN;
-  const byte *pos_scan_4x4 = pos_scan4x4[0];
+  const byte *pos_scan_4x4;
 
-  // QPI
-  //init constants for every chroma qp offset
-  for (i=0; i<2; ++i)
-  {
-    qp_per_uv[i] = p_Vid->qp_per_matrix[ currMB->qp_scaled[i + 1] ];
-    qp_rem_uv[i] = p_Vid->qp_rem_matrix[ currMB->qp_scaled[i + 1] ];
-  }
-
-  // read CBP if not new intra mode
-  if (!IS_I16MB (currMB))
-  {
-    //=====   C B P   =====
-    //---------------------
-    currSE.type = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB) 
-      ? SE_CBP_INTRA
-      : SE_CBP_INTER;
-
-    dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-    if (dP->bitstream->ei_flag)
-    {
-      currSE.mapping = (currMB->mb_type == I4MB || currMB->mb_type == SI4MB || currMB->mb_type == I8MB)
-        ? currSlice->linfo_cbp_intra
-        : currSlice->linfo_cbp_inter;
-    }
-    else
-    {
-      currSE.reading = read_CBP_CABAC;
-    }
-
-    TRACE_STRING("coded_block_pattern");
-    dP->readSyntaxElement(currMB, &currSE, dP);
-    currMB->cbp = cbp = currSE.value1;
-
-
-    //============= Transform size flag for INTER MBs =============
-    //-------------------------------------------------------------
-    need_transform_size_flag = (((currMB->mb_type >= 1 && currMB->mb_type <= 3)||
-      (IS_DIRECT(currMB) && p_Vid->active_sps->direct_8x8_inference_flag) ||
-      (currMB->NoMbPartLessThan8x8Flag))
-      && currMB->mb_type != I8MB && currMB->mb_type != I4MB
-      && (currMB->cbp&15)
-      && currSlice->Transform8x8Mode);
-
-    if (need_transform_size_flag)
-    {
-      currSE.type   =  SE_HEADER;
-      dP = &(currSlice->partArr[partMap[SE_HEADER]]);
-      currSE.reading = readMB_transform_size_flag_CABAC;
-      TRACE_STRING("transform_size_8x8_flag");
-
-      // read CAVLC transform_size_8x8_flag
-      if (dP->bitstream->ei_flag)
-      {
-        currSE.len = 1;
-        readSyntaxElement_FLC(&currSE, dP->bitstream);
-      } 
-      else
-      {
-        dP->readSyntaxElement(currMB, &currSE, dP);
-      }
-      currMB->luma_transform_size_8x8_flag = (Boolean) currSE.value1;
-    }
-
-    //=====   DQUANT   =====
-    //----------------------
-    // Delta quant only if nonzero coeffs
-    if (cbp !=0)
-    {
-      read_delta_quant(&currSE, dP, currMB, partMap, ((currMB->is_intra_block == FALSE)) ? SE_DELTA_QUANT_INTER : SE_DELTA_QUANT_INTRA);
-
-      if (currSlice->dp_mode)
-      {
-        if ((currMB->is_intra_block == FALSE) && currSlice->dpC_NotPresent ) 
-          currMB->dpl_flag = 1;
-
-        if( intra && currSlice->dpB_NotPresent )
-        {
-          currMB->ei_flag = 1;
-          currMB->dpl_flag = 1;
-        }
-
-        // check for prediction from neighbours
-        check_dp_neighbors (currMB);
-        if (currMB->dpl_flag)
-        {
-          cbp = 0; 
-          currMB->cbp = cbp;
-        }
-      }
-    }
-  }
-  else // read DC coeffs for new intra modes
-  {
-    cbp = currMB->cbp;
-  
-    read_delta_quant(&currSE, dP, currMB, partMap, SE_DELTA_QUANT_INTRA);
-
-    if (currSlice->dp_mode)
-    {  
-      if (currSlice->dpB_NotPresent)
-      {
-        currMB->ei_flag  = 1;
-        currMB->dpl_flag = 1;
-      }
-      check_dp_neighbors (currMB);
-      if (currMB->dpl_flag)
-      {
-        currMB->cbp = cbp = 0; 
-      }
-    }
-
-    if (!currMB->dpl_flag)
-    {
-      pos_scan_4x4 = pos_scan4x4[0];
-
-      {
-        currSE.type = SE_LUM_DC_INTRA;
-        dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-        currSE.context      = LUMA_16DC;
-        currSE.type         = SE_LUM_DC_INTRA;
-
-        if (dP->bitstream->ei_flag)
-        {
-          currSE.mapping = linfo_levrun_inter;
-        }
-        else
-        {
-          currSE.reading = readRunLevel_CABAC;
-        }
-
-        level = 1;                            // just to get inside the loop
-
-        for(k = 0; (k < 17) && (level != 0); ++k)
-        {
-          dP->readSyntaxElement(currMB, &currSE, dP);
-          level = currSE.value1;
-
-          if (level != 0)    /* leave if level == 0 */
-          {
-            pos_scan_4x4 += (2 * currSE.value2);
-
-            i0 = ((*pos_scan_4x4++) << 2);
-            j0 = ((*pos_scan_4x4++) << 2);
-
-            currSlice->cof[0][j0][i0] = level;// add new intra DC coeff
-            //currSlice->fcf[0][j0][i0] = level;// add new intra DC coeff
-          }
-        }
-      }
-
-      if(currMB->is_lossless == FALSE)
-        itrans_2(currMB, (ColorPlane) currSlice->colour_plane_id);// transform new intra DC
-    }
-  }
-
-  update_qp(currMB, currSlice->qp);
-
-  qp_per = p_Vid->qp_per_matrix[ currMB->qp_scaled[currSlice->colour_plane_id] ];
-  qp_rem = p_Vid->qp_rem_matrix[ currMB->qp_scaled[currSlice->colour_plane_id] ];
+  int cbp = read_luma_coeff_CABAC(currMB, &currSE, dep_dp);
 
   //init quant parameters for chroma 
   for(i=0; i < 2; ++i)
   {
     qp_per_uv[i] = p_Vid->qp_per_matrix[ currMB->qp_scaled[i + 1] ];
     qp_rem_uv[i] = p_Vid->qp_rem_matrix[ currMB->qp_scaled[i + 1] ];
-  }
-
-  InvLevelScale4x4 = intra? currSlice->InvLevelScale4x4_Intra[currSlice->colour_plane_id][qp_rem] : currSlice->InvLevelScale4x4_Inter[currSlice->colour_plane_id][qp_rem];
-
-  // luma coefficients
-  {
-    //======= Other Modes & CABAC ========
-    //------------------------------------          
-    if (cbp)
-    {
-      if(currMB->luma_transform_size_8x8_flag) 
-      {
-        //======= 8x8 transform size & CABAC ========
-        currMB->read_comp_coeff_8x8_CABAC (currMB, &currSE, PLANE_Y); 
-      }
-      else
-      {
-        currMB->read_comp_coeff_4x4_CABAC (currMB, &currSE, PLANE_Y, InvLevelScale4x4, qp_per, cbp);        
-      }
-    }
   }
 
   //========================== CHROMA DC ============================
@@ -1606,7 +722,6 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_422(Macroblock *currMB)
   {      
     for (ll=0;ll<3;ll+=2)
     {
-      int (*InvLevelScale4x4)[4] = NULL;
       uv = ll>>1;
       {
         int **imgcof = currSlice->cof[uv + 1];
@@ -1619,7 +734,6 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_422(Macroblock *currMB)
         else 
           InvLevelScale4x4 = currSlice->InvLevelScale4x4_Inter[uv + 1][qp_rem_uv_dc];
 
-
         //===================== CHROMA DC YUV422 ======================
         {
           CBPStructure  *s_cbp = &currMB->s_cbp[0];
@@ -1628,18 +742,9 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_422(Macroblock *currMB)
           for(k=0;(k<9)&&(level!=0);++k)
           {
             currSE.context      = CHROMA_DC_2x4;
-            currSE.type         = ((currMB->is_intra_block == TRUE) ? SE_CHR_DC_INTRA : SE_CHR_DC_INTER);
             currMB->is_v_block     = ll;
 
-            dP = &(currSlice->partArr[partMap[currSE.type]]);
-
-            if (dP->bitstream->ei_flag)
-              currSE.mapping = linfo_levrun_c2x2;
-            else
-              currSE.reading = readRunLevel_CABAC;
-
-            dP->readSyntaxElement(currMB, &currSE, dP);
-
+            readRunLevel_CABAC(currMB, &currSE, dep_dp);
             level = currSE.value1;
 
             if (level != 0)
@@ -1696,7 +801,6 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_422(Macroblock *currMB)
             for(i=0;i<2;++i)                
             {
               currSlice->cof[uv + 1][j<<2][i<<2] = m3[i][j];
-              //currSlice->fcf[uv + 1][j<<2][i<<2] = m3[i][j];
             }
           }
         }
@@ -1708,102 +812,91 @@ static void read_CBP_and_coeffs_from_NAL_CABAC_422(Macroblock *currMB)
   //========================== CHROMA AC ============================
   //-----------------------------------------------------------------
   // chroma AC coeff, all zero fram start_scan
-  if (cbp<=31)
+  if (cbp>31)
   {
-  }
-  else
-  {
-    {
-      currSE.context      = CHROMA_AC;
-      currSE.type         = (currMB->is_intra_block ? SE_CHR_AC_INTRA : SE_CHR_AC_INTER);
+    currSE.context      = CHROMA_AC;
 
-      dP = &(currSlice->partArr[partMap[currSE.type]]);
+    if(currMB->is_lossless == FALSE)
+    {          
+      int b4, b8, uv, k;
+      int **cof;
+      CBPStructure  *s_cbp = &currMB->s_cbp[0];
+      for (b8=0; b8 < p_Vid->num_blk8x8_uv; ++b8)
+      {
+        currMB->is_v_block = uv = (b8 > ((p_Vid->num_uv_blocks) - 1 ));
+        InvLevelScale4x4 = intra ? currSlice->InvLevelScale4x4_Intra[uv + 1][qp_rem_uv[uv]] : currSlice->InvLevelScale4x4_Inter[uv + 1][qp_rem_uv[uv]];
+        cof = currSlice->cof[uv + 1];
 
-      if (dP->bitstream->ei_flag)
-        currSE.mapping = linfo_levrun_inter;
-      else
-        currSE.reading = readRunLevel_CABAC;
-
-      if(currMB->is_lossless == FALSE)
-      {          
-        CBPStructure  *s_cbp = &currMB->s_cbp[0];
-        for (b8=0; b8 < p_Vid->num_blk8x8_uv; ++b8)
+        for (b4 = 0; b4 < 4; ++b4)
         {
-          currMB->is_v_block = uv = (b8 > ((p_Vid->num_uv_blocks) - 1 ));
-          InvLevelScale4x4 = intra ? currSlice->InvLevelScale4x4_Intra[uv + 1][qp_rem_uv[uv]] : currSlice->InvLevelScale4x4_Inter[uv + 1][qp_rem_uv[uv]];
+          int blk_x = cofuv_blk_x[yuv][b8][b4];
+          int blk_y = cofuv_blk_y[yuv][b8][b4];
 
-          for (b4 = 0; b4 < 4; ++b4)
+          currMB->subblock_y = subblk_offset_y[yuv][b8][b4];
+          currMB->subblock_x = subblk_offset_x[yuv][b8][b4];
+
+          pos_scan_4x4 = pos_scan4x4[1];
+          level=1;
+
+          for(k = 0; (k < 16) && (level != 0);++k)
           {
-            i = cofuv_blk_x[yuv][b8][b4];
-            j = cofuv_blk_y[yuv][b8][b4];
+            readRunLevel_CABAC(currMB, &currSE, dep_dp);
+            level = currSE.value1;
 
-            currMB->subblock_y = subblk_offset_y[yuv][b8][b4];
-            currMB->subblock_x = subblk_offset_x[yuv][b8][b4];
-
-            pos_scan_4x4 = pos_scan4x4[1];
-            level=1;
-
-            for(k = 0; (k < 16) && (level != 0);++k)
+            if (level != 0)
             {
+              s_cbp->blk |= i64_power2(cbp_blk_chroma[b8][b4]);
+              pos_scan_4x4 += (currSE.value2 << 1);
 
-              dP->readSyntaxElement(currMB, &currSE, dP);
-              level = currSE.value1;
+              i0 = *pos_scan_4x4++;
+              j0 = *pos_scan_4x4++;
 
-              if (level != 0)
-              {
-                s_cbp->blk |= i64_power2(cbp_blk_chroma[b8][b4]);
-                pos_scan_4x4 += (currSE.value2 << 1);
-
-                i0 = *pos_scan_4x4++;
-                j0 = *pos_scan_4x4++;
-
-                currSlice->cof[uv + 1][(j<<2) + j0][(i<<2) + i0] = rshift_rnd_sf((level * InvLevelScale4x4[j0][i0])<<qp_per_uv[uv], 4);
-                //currSlice->fcf[uv + 1][(j<<2) + j0][(i<<2) + i0] = level;
-              }
-            } //for(k=0;(k<16)&&(level!=0);++k)
+              cof[(blk_y<<2) + j0][(blk_x<<2) + i0] = rshift_rnd_sf((level * InvLevelScale4x4[j0][i0])<<qp_per_uv[uv], 4);
+            }
           }
         }
       }
-      else
+    }
+    else
+    {
+      CBPStructure  *s_cbp = &currMB->s_cbp[0];
+      int b4, b8, k;
+      int uv;
+      for (b8=0; b8 < p_Vid->num_blk8x8_uv; ++b8)
       {
-        CBPStructure  *s_cbp = &currMB->s_cbp[0];
-        for (b8=0; b8 < p_Vid->num_blk8x8_uv; ++b8)
+        currMB->is_v_block = uv = (b8 > ((p_Vid->num_uv_blocks) - 1 ));
+
+        for (b4=0; b4 < 4; ++b4)
         {
-          currMB->is_v_block = uv = (b8 > ((p_Vid->num_uv_blocks) - 1 ));
+          int blk_x = cofuv_blk_x[yuv][b8][b4];
+          int blk_y = cofuv_blk_y[yuv][b8][b4];
 
-          for (b4=0; b4 < 4; ++b4)
+          pos_scan_4x4 = pos_scan4x4[1];
+          level=1;
+
+          currMB->subblock_y = subblk_offset_y[yuv][b8][b4];
+          currMB->subblock_x = subblk_offset_x[yuv][b8][b4];
+
+          for(k=0;(k<16)&&(level!=0);++k)
           {
-            i = cofuv_blk_x[yuv][b8][b4];
-            j = cofuv_blk_y[yuv][b8][b4];
+            readRunLevel_CABAC(currMB, &currSE, dep_dp);
+            level = currSE.value1;
 
-            pos_scan_4x4 = pos_scan4x4[1];
-            level=1;
-
-            currMB->subblock_y = subblk_offset_y[yuv][b8][b4];
-            currMB->subblock_x = subblk_offset_x[yuv][b8][b4];
-
-            for(k=0;(k<16)&&(level!=0);++k)
+            if (level != 0)
             {
-              dP->readSyntaxElement(currMB, &currSE, dP);
-              level = currSE.value1;
+              s_cbp->blk |= i64_power2(cbp_blk_chroma[b8][b4]);
+              pos_scan_4x4 += (currSE.value2 << 1);
 
-              if (level != 0)
-              {
-                s_cbp->blk |= i64_power2(cbp_blk_chroma[b8][b4]);
-                pos_scan_4x4 += (currSE.value2 << 1);
+              i0 = *pos_scan_4x4++;
+              j0 = *pos_scan_4x4++;
 
-                i0 = *pos_scan_4x4++;
-                j0 = *pos_scan_4x4++;
-
-                currSlice->cof[uv + 1][(j<<2) + j0][(i<<2) + i0] = level;
-                //currSlice->fcf[uv + 1][(j<<2) + j0][(i<<2) + i0] = level;
-              }
-            } 
-          }
-        } 
-      } //for (b4=0; b4 < 4; b4++)
-    } //for (b8=0; b8 < p_Vid->num_blk8x8_uv; b8++)
-  } //if (dec_picture->chroma_format_idc != YUV400)  
+              currSlice->cof[uv + 1][(blk_y<<2) + j0][(blk_x<<2) + i0] = level;
+            }
+          } 
+        }
+      } 
+    }
+  }
 }
 
 void set_read_CBP_and_coeffs_cabac(Slice *currSlice)
@@ -1835,26 +928,3 @@ void set_read_CBP_and_coeffs_cabac(Slice *currSlice)
     break;
   }
 }
-
-
-/*!
-************************************************************************
-* \brief
-*    setup coefficient reading functions for CABAC
-*
-************************************************************************
-*/
-void set_read_comp_coeff_cabac(Macroblock *currMB)
-{
-  if (currMB->is_lossless == FALSE)
-  {
-    currMB->read_comp_coeff_4x4_CABAC = read_comp_coeff_4x4_CABAC;
-    currMB->read_comp_coeff_8x8_CABAC = read_comp_coeff_8x8_MB_CABAC;
-  }
-  else
-  {
-    currMB->read_comp_coeff_4x4_CABAC = read_comp_coeff_4x4_CABAC_ls;
-    currMB->read_comp_coeff_8x8_CABAC = read_comp_coeff_8x8_MB_CABAC_ls;
-  }
-}
-
