@@ -9,17 +9,17 @@
 
 ## Baseline Performance Results
 
-Benchmarks conducted using [tests/benchmark.py](tests/benchmark.py) across 3 runs (best time recorded):
+Benchmarks conducted using [tests/benchmark.py](tests/benchmark.py) across 5 runs (best time recorded):
 
 | Bitstream | Format / Profile | Frames | Single-Thread (1T) | Multi-Thread (Auto) | Multi-Thread Speedup |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| `x264_1080p_bench.264` | 1080p High Profile | 60 | 2.40 s (25.0 FPS) | 0.73 s (82.1 FPS) | **3.28x** (pipelined) |
-| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 30 | 0.52 s (57.3 FPS) | 0.25 s (121.7 FPS) | **2.12x** |
-| `x264_720p_high_cavlc.264` | 720p High Profile CAVLC | 30 | 0.32 s (95.1 FPS) | 0.20 s (148.3 FPS) | **1.56x** |
-| `x264_720p_high10.264` | 720p High 10-bit | 30 | 0.30 s (100.1 FPS) | 0.30 s (101.3 FPS) | 1.0x |
-| `x264_720p_high_tff.264` | 720p Interlaced / TFF | 30 | 0.52 s (57.7 FPS) | 0.54 s (55.5 FPS) | 1.0x |
-| `high444_lossless.264` | CIF 4:4:4 Lossless | 10 | 0.12 s (84.3 FPS) | 0.12 s (85.1 FPS) | 1.0x |
-| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | 10 | 0.04 s (244.9 FPS) | 0.03 s (330.0 FPS) | **1.35x** |
+| `x264_1080p_bench.264` | 1080p High Profile | 60 | 2.38 s (25.2 FPS) | 1.10 s (54.6 FPS) | **2.17x** (pipelined) |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 30 | 0.42 s (71.6 FPS) | 0.24 s (124.8 FPS) | **1.75x** |
+| `x264_720p_high_cavlc.264` | 720p High Profile CAVLC | 30 | 0.26 s (115.4 FPS) | 0.19 s (161.3 FPS) | **1.40x** |
+| `x264_720p_high10.264` | 720p High 10-bit | 30 | 0.33 s (90.1 FPS) | 0.34 s (87.3 FPS) | 1.0x |
+| `x264_720p_high_tff.264` | 720p Interlaced / TFF | 30 | 0.55 s (55.0 FPS) | 0.55 s (54.3 FPS) | 1.0x |
+| `high444_lossless.264` | CIF 4:4:4 Lossless | 10 | 0.11 s (87.2 FPS) | 0.11 s (88.0 FPS) | 1.0x |
+| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | 10 | 0.04 s (264.3 FPS) | 0.03 s (315.9 FPS) | **1.20x** |
 
 ---
 
@@ -33,12 +33,17 @@ Profiling conducted using high-resolution nanosecond timers on 1080p stream (`x2
 =======================================================
   Component             Time (ms)     Percentage       
 -------------------------------------------------------
-  Motion Compensation     871.28 ms        42.2 %
-  CABAC/Entropy Decode    642.91 ms        31.1 %
-  Deblocking Filter       412.50 ms        20.0 %
-  Inverse Transforms      139.68 ms         6.8 %
+  CABAC/Entropy Decode    616.48 ms        37.9 %
+  MB Reconstruction       653.49 ms        40.2 %
+    - Transforms (sub)     93.44 ms         5.7 %
+    - Intra Pred (sub)     10.53 ms         0.6 %
+    - MV Deriv/Other      549.52 ms        33.8 %
+  Deblocking Filter       352.14 ms        21.7 %
+    - Strength Calc       105.08 ms         6.5 %
+    - Edge Filtering      247.05 ms        15.2 %
+  Picture Boundary Pad      2.95 ms         0.2 %
 -------------------------------------------------------
-  Profiled Core Total    2066.37 ms       100.0 %
+  Profiled Core Total    1625.05 ms       100.0 %
 =======================================================
 ```
 
@@ -97,13 +102,15 @@ Measurements taken on AMD Ryzen 9 3900X (MSVC Release build, 3-run minimum):
 
 | Bitstream | Profile / Resolution | Threads | Generic (`--cpuid 0`) | SIMD (`--cpuid 1`) | Speedup |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| `x264_1080p_bench.264` | 1080p 60fps High | 1T | 2.350 s (25.5 FPS) | **2.386 s (25.1 FPS)** | - |
-| `x264_1080p_bench.264` | 1080p 60fps High | Multi-T | 1.349 s (44.5 FPS) | **0.730 s (82.1 FPS)** | **+228.4% (3.28x vs 1T)** |
-| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 1T | 0.513 s (58.4 FPS) | **0.531 s (56.5 FPS)** | - |
-| `x264_720p_main_slices.264` | 720p Multi-Slice Main | Multi-T | 0.259 s (115.6 FPS) | **0.261 s (114.8 FPS)** | **+103.2% (2.03x vs 1T)** |
-| `x264_720p_high_cavlc.264` | 720p CAVLC High | 1T | 0.321 s (93.5 FPS) | **0.327 s (91.7 FPS)** | - |
-| `x264_720p_high_cavlc.264` | 720p CAVLC High | Multi-T | 0.220 s (136.2 FPS) | **0.216 s (139.1 FPS)** | **+51.7% (1.52x vs 1T)** |
-| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | Multi-T | 0.034 s (298.2 FPS) | **0.031 s (325.2 FPS)** | **+33.5% (1.33x vs 1T)** |
+| `x264_1080p_bench.264` | 1080p 60fps High | 1T | 2.73 s (22.0 FPS) | **2.38 s (25.2 FPS)** | **+14.5%** |
+| `x264_1080p_bench.264` | 1080p 60fps High | Multi-T | 1.36 s (44.0 FPS) | **1.10 s (54.6 FPS)** | **+24.1% (2.17x vs 1T)** |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 1T | 0.52 s (58.2 FPS) | **0.42 s (71.6 FPS)** | **+23.0%** |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | Multi-T | 0.27 s (112.6 FPS) | **0.24 s (124.8 FPS)** | **+10.8% (1.75x vs 1T)** |
+| `x264_720p_high_cavlc.264` | 720p CAVLC High | 1T | 0.33 s (91.7 FPS) | **0.26 s (115.4 FPS)** | **+25.9%** |
+| `x264_720p_high_cavlc.264` | 720p CAVLC High | Multi-T | 0.23 s (132.4 FPS) | **0.19 s (161.3 FPS)** | **+21.8% (1.40x vs 1T)** |
+| `x264_720p_high_tff.264` | 720p Interlaced / TFF | 1T | 0.62 s (48.2 FPS) | **0.55 s (55.0 FPS)** | **+14.1%** |
+| `x264_720p_high_tff.264` | 720p Interlaced / TFF | Multi-T | 0.61 s (49.1 FPS) | **0.55 s (54.3 FPS)** | **+10.6%** |
+| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | Multi-T | 0.03 s (299.2 FPS) | **0.03 s (315.9 FPS)** | **+5.6% (1.20x vs 1T)** |
 
 ---
 
@@ -124,10 +131,14 @@ Measurements taken on AMD Ryzen 9 3900X (MSVC Release build, 3-run minimum):
    - Implemented an asynchronous multi-frame pipeline (`f264_frame_pipeline`) built upon `f264_threadqueue` directed acyclic graph (DAG) dependency tracking.
    - Added atomic picture reference counting (`f264_pic_ref` / `f264_pic_unref`) on `StorablePicture` so that DPB sliding-window evictions keep reference frames alive across asynchronous decode boundaries.
    - Enabled single-slice 1080p video streams (`x264_1080p_bench.264`) to scale from 25.5 FPS up to **46.1 FPS (+80.8% speedup)** on multi-core hardware while preserving 100% bit-exact conformance across the 35 regression streams.
-6. **Milestone 6 - Row-Level Overlap Pipelining & AVX2 Weighted Bi-Prediction (60+ FPS Target Exceeded)**:
+6. **Milestone 6 - Row-Level Overlap Pipelining & AVX2 Weighted Bi-Prediction**:
    - **Row-Level Inter-Frame Tracking & Progressive Deblocking**: Replaced coarse whole-frame reference waits with row-granularity atomic progress tracking (`progress_rows`) in `StorablePicture`. Macroblock decoding asynchronously triggers incremental deblocking and padding of completed rows (`DeblockMbRows`), allowing downstream P/B frames to begin motion compensation immediately once their reference row footprint is reconstructed and deblocked.
    - **Dynamic Slot Scheduling**: Replaced modulo slot allocation with dynamic idle/finished job slot querying (`f264_threadqueue_job_is_done`), eliminating pipeline stalls on periodic GOP structures.
-   - **AVX2 Implicit Weighted Bi-Prediction & Full Subpel Coverage**: Vectorized weighted bi-prediction with `_mm_madd_epi16` / `_mm_sra_epi32` / `_mm_packus_epi16` and added vectorized routines for all missing diagonal subpel interpolation modes.
-   - **Performance Result**: 1080p 60-frame decoding wall time dropped to **0.730 s (82.1 FPS)** on 24 threads (exceeding the 60 FPS real-time target by +36.8%, and achieving a **3.28x multi-threaded speedup** over single-threaded decoding), with 100% bit-exact conformance (35/35 test streams passing).
+   - **AVX2 Implicit Weighted Bi-Prediction**: Vectorized weighted bi-prediction with `_mm_madd_epi16` / `_mm_sra_epi32` / `_mm_packus_epi16` and added vectorized routines for all missing diagonal subpel interpolation modes.
+7. **Commit `05915a4` - Unified 16-bit High Bit-Depth AVX2 SIMD Migration**:
+   - **Full Subpel Vectorization**: Migrated all luma subpel motion compensation routines to native 16-bit SIMD (`filter_6tap_16_u16`, `filter_6tap_8_u16`, `filter_6tap_4_u16`) using `_mm256_mullo_epi16`, signed vector arithmetic, and saturated clamping across all 15 fractional luma modes, plus vectorized bilinear chroma interpolation for `uint16_t` `imgpel`.
+   - **Vectorized In-Loop Deblocking**: Re-enabled and vectorized 16-bit luma normal deblocking in `avx2-deblock.cpp` with 64-bit lane masking and `_mm_testz_si128` early exits.
+   - **Transform Reconstruction**: Modernized `recon8x8_avx2` for `uint16_t` `imgpel` across all bit depths and added AVX2/SSE2 `sample_reconstruct` for 4x4 and 8x8 blocks.
+   - **Performance Result**: Reduced 1080p multi-threaded decode time from 1.36 s to **1.10 s (54.6 FPS)**, delivering a **+24.1% speedup** over pure generic C++ routines while maintaining 100% bit-exact conformance across all 35 test streams.
 
 

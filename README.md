@@ -3,7 +3,7 @@
 [![C++20](https://img.shields.io/badge/Language-C%2B%2B20-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B20)
 [![License: ITU-T / ISO/IEC](https://img.shields.io/badge/License-ITU--T%20%2F%20ISO%20IEC-green.svg)](https://www.itu.int)
 [![Bit-Exact Conformance](https://img.shields.io/badge/Conformance-100%25%20(35%2F35)-brightgreen.svg)](#conformance--testing)
-[![1080p Performance](https://img.shields.io/badge/1080p%20Decode-82%2B%20FPS-orange.svg)](#performance-benchmarks)
+[![1080p Performance](https://img.shields.io/badge/1080p%20Decode-54%2B%20FPS-orange.svg)](#performance-benchmarks)
 
 **f264dec** is an ultra-fast, modern C++20 H.264/AVC video decoder featuring AVX2 SIMD acceleration, fine-grained row-level inter-frame overlap pipelining, and DAG-based multi-threading. It is engineered for low latency and high throughput while preserving **100% bit-exact conformance** with standard reference decoders across baseline, main, and high profiles.
 
@@ -12,7 +12,7 @@
 ## Key Features
 
 - **High-Throughput 1080p Real-Time Decoding**:
-  Decodes single-slice 1080p 60fps High Profile streams at **>82 FPS** (0.73 s wall time for 60 frames on an AMD Ryzen 9 3900X), delivering a **3.28x multi-threaded speedup** over single-threaded decoding.
+  Decodes single-slice 1080p 60fps High Profile streams at **>54 FPS** (1.10 s wall time for 60 frames on an AMD Ryzen 9 3900X), delivering a **2.17x multi-threaded speedup** over single-threaded decoding.
 - **Progressive Row-Level Inter-Frame Pipeline**:
   Features an asynchronous directed acyclic graph (DAG) job queue with atomic macroblock-row tracking (`progress_rows`). Completed macroblock rows are immediately deblocked and padded in-flight, allowing downstream P- and B-frames to perform motion compensation without waiting for upstream reference frames to finish.
 - **Dynamic Work Scheduling**:
@@ -34,11 +34,11 @@ Measured on an AMD Ryzen 9 3900X (12 cores / 24 threads, 3.8 GHz base) running W
 
 | Bitstream | Profile / Resolution | Frames | Single-Thread (1T) | Multi-Thread (24T) | Multi-Thread Speedup |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| `x264_1080p_bench.264` | 1080p 60fps High | 60 | 2.40 s (25.0 FPS) | **0.73 s (82.1 FPS)** | **3.28x** |
-| `x264_720p_high_cavlc.264` | 720p High Profile CAVLC | 30 | 0.33 s (91.7 FPS) | **0.22 s (139.1 FPS)** | **1.52x** |
-| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 30 | 0.53 s (56.5 FPS) | **0.26 s (114.8 FPS)** | **2.03x** |
-| `x264_720p_high10.264` | 720p High 10-bit | 30 | 0.32 s (95.1 FPS) | **0.32 s (94.2 FPS)** | 1.00x |
-| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | 10 | 0.04 s (243.6 FPS) | **0.03 s (325.2 FPS)** | **1.33x** |
+| `x264_1080p_bench.264` | 1080p 60fps High | 60 | 2.38 s (25.2 FPS) | **1.10 s (54.6 FPS)** | **2.17x** |
+| `x264_720p_main_slices.264` | 720p Multi-Slice Main | 30 | 0.42 s (71.6 FPS) | **0.24 s (124.8 FPS)** | **1.75x** |
+| `x264_720p_high_cavlc.264` | 720p High Profile CAVLC | 30 | 0.26 s (115.4 FPS) | **0.19 s (161.3 FPS)** | **1.40x** |
+| `x264_720p_high10.264` | 720p High 10-bit | 30 | 0.33 s (90.1 FPS) | **0.34 s (87.3 FPS)** | 1.00x |
+| `base_cavlc_slices.264` | QCIF Multi-Slice Baseline | 10 | 0.04 s (264.3 FPS) | **0.03 s (315.9 FPS)** | **1.20x** |
 
 For detailed hotspot profiles, architectural analysis, and optimization milestones, see [BENCHMARK.md](BENCHMARK.md).
 
