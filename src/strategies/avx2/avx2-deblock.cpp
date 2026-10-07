@@ -9,17 +9,19 @@
 
 #if defined(F264_ARCH_X86)
 
-static inline void deblock_luma_4pel_sse(
+static inline bool deblock_luma_4pel_sse(
     __m128i &p0, __m128i &q0, __m128i &p1, __m128i &q1,
     __m128i p2, __m128i q2,
     int Alpha, int Beta, int C0, int max_imgpel_value)
 {
+  const __m128i lane_mask = _mm_setr_epi32(-1, -1, 0, 0);
+
   __m128i edge_diff = _mm_sub_epi16(q0, p0);
   __m128i abs_edge_diff = _mm_abs_epi16(edge_diff);
-  __m128i mask_alpha = _mm_cmplt_epi16(abs_edge_diff, _mm_set1_epi16(Alpha));
+  __m128i mask_alpha = _mm_and_si128(_mm_cmplt_epi16(abs_edge_diff, _mm_set1_epi16(Alpha)), lane_mask);
 
   if (_mm_testz_si128(mask_alpha, mask_alpha))
-    return;
+    return false;
 
   __m128i beta_vec = _mm_set1_epi16(Beta);
   __m128i abs_p0_p1 = _mm_abs_epi16(_mm_sub_epi16(p0, p1));
@@ -29,7 +31,7 @@ static inline void deblock_luma_4pel_sse(
   __m128i filter_mask = _mm_and_si128(mask_alpha, mask_beta);
 
   if (_mm_testz_si128(filter_mask, filter_mask))
-    return;
+    return false;
 
   __m128i abs_p0_p2 = _mm_abs_epi16(_mm_sub_epi16(p0, p2));
   __m128i abs_q0_q2 = _mm_abs_epi16(_mm_sub_epi16(q0, q2));
@@ -70,78 +72,68 @@ static inline void deblock_luma_4pel_sse(
 
   p0 = _mm_min_epi16(_mm_max_epi16(_mm_add_epi16(p0, dif), _mm_setzero_si128()), _mm_set1_epi16(max_imgpel_value));
   q0 = _mm_min_epi16(_mm_max_epi16(_mm_sub_epi16(q0, dif), _mm_setzero_si128()), _mm_set1_epi16(max_imgpel_value));
+
+  return true;
 }
 
 void luma_hor_deblock_normal_avx2(imgpel *imgP, imgpel *imgQ, int width, int Alpha, int Beta, int C0, int max_imgpel_value)
 {
-  if (sizeof(imgpel) == 1)
-  {
-    __m128i p0 = _mm_cvtepu8_epi16(_mm_cvtsi32_si128(*(const int32_t*)imgP));
-    __m128i q0 = _mm_cvtepu8_epi16(_mm_cvtsi32_si128(*(const int32_t*)imgQ));
-    __m128i p1 = _mm_cvtepu8_epi16(_mm_cvtsi32_si128(*(const int32_t*)(imgP - width)));
-    __m128i q1 = _mm_cvtepu8_epi16(_mm_cvtsi32_si128(*(const int32_t*)(imgQ + width)));
-    __m128i p2 = _mm_cvtepu8_epi16(_mm_cvtsi32_si128(*(const int32_t*)(imgP - 2 * width)));
-    __m128i q2 = _mm_cvtepu8_epi16(_mm_cvtsi32_si128(*(const int32_t*)(imgQ + 2 * width)));
+  __m128i p0 = _mm_loadl_epi64((const __m128i*)imgP);
+  __m128i q0 = _mm_loadl_epi64((const __m128i*)imgQ);
+  __m128i p1 = _mm_loadl_epi64((const __m128i*)(imgP - width));
+  __m128i q1 = _mm_loadl_epi64((const __m128i*)(imgQ + width));
+  __m128i p2 = _mm_loadl_epi64((const __m128i*)(imgP - 2 * width));
+  __m128i q2 = _mm_loadl_epi64((const __m128i*)(imgQ + 2 * width));
 
-    deblock_luma_4pel_sse(p0, q0, p1, q1, p2, q2, Alpha, Beta, C0, max_imgpel_value);
-
-    *(int32_t*)imgP = _mm_cvtsi128_si32(_mm_packus_epi16(p0, p0));
-    *(int32_t*)imgQ = _mm_cvtsi128_si32(_mm_packus_epi16(q0, q0));
-    if (C0 > 0)
-    {
-      *(int32_t*)(imgP - width) = _mm_cvtsi128_si32(_mm_packus_epi16(p1, p1));
-      *(int32_t*)(imgQ + width) = _mm_cvtsi128_si32(_mm_packus_epi16(q1, q1));
-    }
+  if (!deblock_luma_4pel_sse(p0, q0, p1, q1, p2, q2, Alpha, Beta, C0, max_imgpel_value))
     return;
+
+  _mm_storel_epi64((__m128i*)imgP, p0);
+  _mm_storel_epi64((__m128i*)imgQ, q0);
+  if (C0 > 0)
+  {
+    _mm_storel_epi64((__m128i*)(imgP - width), p1);
+    _mm_storel_epi64((__m128i*)(imgQ + width), q1);
   }
-  luma_hor_deblock_normal_generic(imgP, imgQ, width, Alpha, Beta, C0, max_imgpel_value);
 }
 
 void luma_ver_deblock_normal_avx2(imgpel **cur_img, int pos_x1, int Alpha, int Beta, int C0, int max_imgpel_value)
 {
-  if (sizeof(imgpel) == 1)
-  {
-    int16_t p2_arr[4] = { (int16_t)cur_img[0][pos_x1 - 2], (int16_t)cur_img[1][pos_x1 - 2], (int16_t)cur_img[2][pos_x1 - 2], (int16_t)cur_img[3][pos_x1 - 2] };
-    int16_t p1_arr[4] = { (int16_t)cur_img[0][pos_x1 - 1], (int16_t)cur_img[1][pos_x1 - 1], (int16_t)cur_img[2][pos_x1 - 1], (int16_t)cur_img[3][pos_x1 - 1] };
-    int16_t p0_arr[4] = { (int16_t)cur_img[0][pos_x1 + 0], (int16_t)cur_img[1][pos_x1 + 0], (int16_t)cur_img[2][pos_x1 + 0], (int16_t)cur_img[3][pos_x1 + 0] };
-    int16_t q0_arr[4] = { (int16_t)cur_img[0][pos_x1 + 1], (int16_t)cur_img[1][pos_x1 + 1], (int16_t)cur_img[2][pos_x1 + 1], (int16_t)cur_img[3][pos_x1 + 1] };
-    int16_t q1_arr[4] = { (int16_t)cur_img[0][pos_x1 + 2], (int16_t)cur_img[1][pos_x1 + 2], (int16_t)cur_img[2][pos_x1 + 2], (int16_t)cur_img[3][pos_x1 + 2] };
-    int16_t q2_arr[4] = { (int16_t)cur_img[0][pos_x1 + 3], (int16_t)cur_img[1][pos_x1 + 3], (int16_t)cur_img[2][pos_x1 + 3], (int16_t)cur_img[3][pos_x1 + 3] };
+  __m128i p2 = _mm_setr_epi16(cur_img[0][pos_x1 - 2], cur_img[1][pos_x1 - 2], cur_img[2][pos_x1 - 2], cur_img[3][pos_x1 - 2], 0, 0, 0, 0);
+  __m128i p1 = _mm_setr_epi16(cur_img[0][pos_x1 - 1], cur_img[1][pos_x1 - 1], cur_img[2][pos_x1 - 1], cur_img[3][pos_x1 - 1], 0, 0, 0, 0);
+  __m128i p0 = _mm_setr_epi16(cur_img[0][pos_x1 + 0], cur_img[1][pos_x1 + 0], cur_img[2][pos_x1 + 0], cur_img[3][pos_x1 + 0], 0, 0, 0, 0);
+  __m128i q0 = _mm_setr_epi16(cur_img[0][pos_x1 + 1], cur_img[1][pos_x1 + 1], cur_img[2][pos_x1 + 1], cur_img[3][pos_x1 + 1], 0, 0, 0, 0);
+  __m128i q1 = _mm_setr_epi16(cur_img[0][pos_x1 + 2], cur_img[1][pos_x1 + 2], cur_img[2][pos_x1 + 2], cur_img[3][pos_x1 + 2], 0, 0, 0, 0);
+  __m128i q2 = _mm_setr_epi16(cur_img[0][pos_x1 + 3], cur_img[1][pos_x1 + 3], cur_img[2][pos_x1 + 3], cur_img[3][pos_x1 + 3], 0, 0, 0, 0);
 
-    __m128i p2 = _mm_loadl_epi64((const __m128i*)p2_arr);
-    __m128i p1 = _mm_loadl_epi64((const __m128i*)p1_arr);
-    __m128i p0 = _mm_loadl_epi64((const __m128i*)p0_arr);
-    __m128i q0 = _mm_loadl_epi64((const __m128i*)q0_arr);
-    __m128i q1 = _mm_loadl_epi64((const __m128i*)q1_arr);
-    __m128i q2 = _mm_loadl_epi64((const __m128i*)q2_arr);
-
-    deblock_luma_4pel_sse(p0, q0, p1, q1, p2, q2, Alpha, Beta, C0, max_imgpel_value);
-
-    _mm_storel_epi64((__m128i*)p0_arr, p0);
-    _mm_storel_epi64((__m128i*)q0_arr, q0);
-    if (C0 > 0)
-    {
-      _mm_storel_epi64((__m128i*)p1_arr, p1);
-      _mm_storel_epi64((__m128i*)q1_arr, q1);
-      for (int r = 0; r < 4; r++)
-      {
-        cur_img[r][pos_x1 - 1] = (imgpel)p1_arr[r];
-        cur_img[r][pos_x1 + 0] = (imgpel)p0_arr[r];
-        cur_img[r][pos_x1 + 1] = (imgpel)q0_arr[r];
-        cur_img[r][pos_x1 + 2] = (imgpel)q1_arr[r];
-      }
-    }
-    else
-    {
-      for (int r = 0; r < 4; r++)
-      {
-        cur_img[r][pos_x1 + 0] = (imgpel)p0_arr[r];
-        cur_img[r][pos_x1 + 1] = (imgpel)q0_arr[r];
-      }
-    }
+  if (!deblock_luma_4pel_sse(p0, q0, p1, q1, p2, q2, Alpha, Beta, C0, max_imgpel_value))
     return;
+
+  uint16_t p0_arr[8], q0_arr[8];
+  _mm_storeu_si128((__m128i*)p0_arr, p0);
+  _mm_storeu_si128((__m128i*)q0_arr, q0);
+
+  if (C0 > 0)
+  {
+    uint16_t p1_arr[8], q1_arr[8];
+    _mm_storeu_si128((__m128i*)p1_arr, p1);
+    _mm_storeu_si128((__m128i*)q1_arr, q1);
+    for (int r = 0; r < 4; r++)
+    {
+      cur_img[r][pos_x1 - 1] = p1_arr[r];
+      cur_img[r][pos_x1 + 0] = p0_arr[r];
+      cur_img[r][pos_x1 + 1] = q0_arr[r];
+      cur_img[r][pos_x1 + 2] = q1_arr[r];
+    }
   }
-  luma_ver_deblock_normal_generic(cur_img, pos_x1, Alpha, Beta, C0, max_imgpel_value);
+  else
+  {
+    for (int r = 0; r < 4; r++)
+    {
+      cur_img[r][pos_x1 + 0] = p0_arr[r];
+      cur_img[r][pos_x1 + 1] = q0_arr[r];
+    }
+  }
 }
 
 #endif // F264_ARCH_X86

@@ -126,34 +126,90 @@ static void inverse8x8_avx2(int **tblock, int **block, int pos_x)
 
 static void recon8x8_avx2(int **m7, imgpel **mb_rec, imgpel **mpr, int max_imgpel_value, int ioff)
 {
-  if (sizeof(imgpel) == 1 && max_imgpel_value == 255)
+  const __m256i v32 = _mm256_set1_epi32(32);
+  const __m256i v_zero = _mm256_setzero_si256();
+  const __m256i v_max = _mm256_set1_epi32(max_imgpel_value);
+
+  for (int j = 0; j < 8; j++)
   {
-    const __m256i v32 = _mm256_set1_epi32(32);
-    for (int j = 0; j < 8; j++)
+    const int *m_tr = (*m7++) + ioff;
+    imgpel *m_rec = (*mb_rec++) + ioff;
+    const imgpel *m_prd = (*mpr++) + ioff;
+
+    __m256i tr = _mm256_loadu_si256((const __m256i*)m_tr);
+    tr = _mm256_srai_epi32(_mm256_add_epi32(tr, v32), 6);
+
+    __m128i prd16 = _mm_loadu_si128((const __m128i*)m_prd);
+    __m256i prd32 = _mm256_cvtepu16_epi32(prd16);
+
+    __m256i sum = _mm256_add_epi32(tr, prd32);
+    sum = _mm256_min_epi32(_mm256_max_epi32(sum, v_zero), v_max);
+
+    __m128i lo = _mm256_castsi256_si128(sum);
+    __m128i hi = _mm256_extracti128_si256(sum, 1);
+    __m128i rec16 = _mm_packus_epi32(lo, hi);
+
+    _mm_storeu_si128((__m128i*)m_rec, rec16);
+  }
+}
+
+static void sample_reconstruct_avx2(imgpel **curImg, imgpel **mpr, int **mb_rres,
+                                    int mb_x, int opix_x, int width, int height,
+                                    int max_imgpel_value, int dq_bits)
+{
+  if (dq_bits == 6 && (width % 4 == 0))
+  {
+    const __m256i v32_256 = _mm256_set1_epi32(32);
+    const __m256i zero_256 = _mm256_setzero_si256();
+    const __m256i max_val_256 = _mm256_set1_epi32(max_imgpel_value);
+
+    const __m128i v32_128 = _mm_set1_epi32(32);
+    const __m128i zero_128 = _mm_setzero_si128();
+    const __m128i max_val_128 = _mm_set1_epi32(max_imgpel_value);
+
+    for (int j = 0; j < height; j++)
     {
-      const int *m_tr = (*m7++) + ioff;
-      imgpel *m_rec = (*mb_rec++) + ioff;
-      const imgpel *m_prd = (*mpr++) + ioff;
+      imgpel *imgOrg = &curImg[j][opix_x];
+      imgpel *imgPred = &mpr[j][mb_x];
+      int *m7 = &mb_rres[j][mb_x];
 
-      __m256i tr = _mm256_loadu_si256((const __m256i*)m_tr);
-      tr = _mm256_srai_epi32(_mm256_add_epi32(tr, v32), 6);
+      int i = 0;
+      for (; i + 8 <= width; i += 8)
+      {
+        __m256i res = _mm256_loadu_si256((const __m256i*)&m7[i]);
+        res = _mm256_srai_epi32(_mm256_add_epi32(res, v32_256), 6);
 
-      __m128i prd8 = _mm_loadl_epi64((const __m128i*)m_prd);
-      __m256i prd32 = _mm256_cvtepu8_epi32(prd8);
+        __m128i pred16 = _mm_loadu_si128((const __m128i*)&imgPred[i]);
+        __m256i pred32 = _mm256_cvtepu16_epi32(pred16);
 
-      __m256i sum = _mm256_add_epi32(tr, prd32);
+        __m256i sum = _mm256_add_epi32(res, pred32);
+        sum = _mm256_min_epi32(_mm256_max_epi32(sum, zero_256), max_val_256);
 
-      __m128i lo = _mm256_castsi256_si128(sum);
-      __m128i hi = _mm256_extracti128_si256(sum, 1);
-      __m128i p16 = _mm_packs_epi32(lo, hi);
-      __m128i p8  = _mm_packus_epi16(p16, p16);
+        __m128i lo = _mm256_castsi256_si128(sum);
+        __m128i hi = _mm256_extracti128_si256(sum, 1);
+        __m128i packed16 = _mm_packus_epi32(lo, hi);
 
-      _mm_storel_epi64((__m128i*)m_rec, p8);
+        _mm_storeu_si128((__m128i*)&imgOrg[i], packed16);
+      }
+      for (; i < width; i += 4)
+      {
+        __m128i res = _mm_loadu_si128((const __m128i*)&m7[i]);
+        res = _mm_srai_epi32(_mm_add_epi32(res, v32_128), 6);
+
+        __m128i pred4 = _mm_loadl_epi64((const __m128i*)&imgPred[i]);
+        __m128i pred32 = _mm_unpacklo_epi16(pred4, zero_128);
+
+        __m128i sum = _mm_add_epi32(res, pred32);
+        sum = _mm_min_epi32(_mm_max_epi32(sum, zero_128), max_val_128);
+
+        __m128i packed16 = _mm_packus_epi32(sum, sum);
+        _mm_storel_epi64((__m128i*)&imgOrg[i], packed16);
+      }
     }
   }
   else
   {
-    recon8x8_generic(m7, mb_rec, mpr, max_imgpel_value, ioff);
+    sample_reconstruct_generic(curImg, mpr, mb_rres, mb_x, opix_x, width, height, max_imgpel_value, dq_bits);
   }
 }
 
@@ -165,6 +221,7 @@ int f264_strategy_register_transform_avx2(void *opaque, uint8_t bitdepth)
   bool success = true;
   success &= (f264_strategyselector_register(opaque, "inverse8x8", "avx2", 20, (void*)inverse8x8_avx2) != 0);
   success &= (f264_strategyselector_register(opaque, "recon8x8", "avx2", 20, (void*)recon8x8_avx2) != 0);
+  success &= (f264_strategyselector_register(opaque, "sample_reconstruct", "avx2", 20, (void*)sample_reconstruct_avx2) != 0);
   return success ? 1 : 0;
 #else
   return 1;

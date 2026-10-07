@@ -80,10 +80,11 @@ static void sample_reconstruct_sse2(imgpel **curImg, imgpel **mpr, int **mb_rres
                                     int mb_x, int opix_x, int width, int height,
                                     int max_imgpel_value, int dq_bits)
 {
-  if (sizeof(imgpel) == 1 && max_imgpel_value == 255 && dq_bits == 6 && (width % 4 == 0))
+  if (dq_bits == 6 && (width % 4 == 0))
   {
     const __m128i offset = _mm_set1_epi32(1 << (6 - 1)); // 32
     const __m128i zero = _mm_setzero_si128();
+    const __m128i max_val = _mm_set1_epi32(max_imgpel_value);
 
     for (int j = 0; j < height; j++)
     {
@@ -97,18 +98,14 @@ static void sample_reconstruct_sse2(imgpel **curImg, imgpel **mpr, int **mb_rres
         res = _mm_add_epi32(res, offset);
         res = _mm_srai_epi32(res, 6);
 
-        int pred4 = *(const int*)&imgPred[i];
-        __m128i pred_vec = _mm_cvtsi32_si128(pred4);
-        pred_vec = _mm_unpacklo_epi8(pred_vec, zero);
-        pred_vec = _mm_unpacklo_epi16(pred_vec, zero);
+        __m128i pred4 = _mm_loadl_epi64((const __m128i*)&imgPred[i]);
+        __m128i pred_vec = _mm_unpacklo_epi16(pred4, zero);
 
         __m128i sum = _mm_add_epi32(res, pred_vec);
+        sum = _mm_min_epi32(_mm_max_epi32(sum, zero), max_val);
 
-        __m128i packed16 = _mm_packs_epi32(sum, sum);
-        __m128i packed8 = _mm_packus_epi16(packed16, packed16);
-
-        int out4 = _mm_cvtsi128_si32(packed8);
-        *(int*)&imgOrg[i] = out4;
+        __m128i packed16 = _mm_packus_epi32(sum, sum);
+        _mm_storel_epi64((__m128i*)&imgOrg[i], packed16);
       }
     }
   }
