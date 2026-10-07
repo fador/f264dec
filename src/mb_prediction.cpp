@@ -31,6 +31,7 @@
 #include "intra16x16_pred.h"
 #include "mv_prediction.h"
 #include "mb_prediction.h"
+#include "profiling.h"
 
 extern int  get_colocated_info_8x8 (Macroblock *currMB, StorablePicture *list1, int i, int j);
 extern int  get_colocated_info_4x4 (Macroblock *currMB, StorablePicture *list1, int i, int j);
@@ -38,6 +39,7 @@ extern int  get_colocated_info_4x4 (Macroblock *currMB, StorablePicture *list1, 
 
 int mb_pred_intra4x4(Macroblock *currMB, ColorPlane curr_plane, imgpel **currImg, StorablePicture *dec_picture)
 {
+  ScopedTimer timer(g_profile_stats.intra_ns);
   Slice *currSlice = currMB->p_Slice;
   int yuv = dec_picture->chroma_format_idc - 1;
   int i=0, j=0,k, j4=0,i4=0;  
@@ -86,6 +88,7 @@ int mb_pred_intra4x4(Macroblock *currMB, ColorPlane curr_plane, imgpel **currImg
 
 int mb_pred_intra16x16(Macroblock *currMB, ColorPlane curr_plane, StorablePicture *dec_picture)
 {
+  ScopedTimer timer(g_profile_stats.intra_ns);
   int yuv = dec_picture->chroma_format_idc - 1;
 
   currMB->p_Slice->intra_pred_16x16(currMB, curr_plane, currMB->i16mode);
@@ -106,6 +109,7 @@ int mb_pred_intra16x16(Macroblock *currMB, ColorPlane curr_plane, StorablePictur
 
 int mb_pred_intra8x8(Macroblock *currMB, ColorPlane curr_plane, imgpel **currImg, StorablePicture *dec_picture)
 {
+  ScopedTimer timer(g_profile_stats.intra_ns);
   Slice *currSlice = currMB->p_Slice;
   int yuv = dec_picture->chroma_format_idc - 1;
 

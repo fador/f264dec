@@ -22,6 +22,7 @@
 #include "quant.h"
 #include "memalloc.h"
 #include "strategies/strategies-transform.h"
+#include "profiling.h"
 
 /*!
  ***********************************************************************
@@ -724,6 +725,7 @@ void iMBtrans8x8(Macroblock *currMB, ColorPlane pl)
 
 void iTransform(Macroblock *currMB, ColorPlane pl, int smb)
 {
+  ScopedTimer timer(g_profile_stats.transform_ns);
   Slice *currSlice = currMB->p_Slice;
   VideoParameters *p_Vid = currMB->p_Vid;
   StorablePicture *dec_picture = currSlice->dec_picture;

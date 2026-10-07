@@ -17,6 +17,8 @@ void f264_profile_report(void)
     double mc_chroma_ms = g_profile_stats.mc_chroma_ns.load() / 1e6;
     double mc_pred_ms = g_profile_stats.mc_pred_ns.load() / 1e6;
     double tr_ms = g_profile_stats.transform_ns.load() / 1e6;
+    double intra_ms = g_profile_stats.intra_ns.load() / 1e6;
+    double mv_ms = g_profile_stats.mv_pred_ns.load() / 1e6;
     double db_ms = g_profile_stats.deblock_ns.load() / 1e6;
     double db_str_ms = g_profile_stats.db_strength_ns.load() / 1e6;
     double db_flt_ms = g_profile_stats.db_filter_ns.load() / 1e6;
@@ -35,10 +37,9 @@ void f264_profile_report(void)
     std::fprintf(stderr, "  CABAC/Entropy Decode  %8.2f ms       %5.1f %%\n", cb_ms, 100.0 * cb_ms / total_ms);
     std::fprintf(stderr, "  MB Reconstruction     %8.2f ms       %5.1f %%\n", mb_ms, 100.0 * mb_ms / total_ms);
     std::fprintf(stderr, "    - Motion Comp (sub) %8.2f ms       %5.1f %%\n", mc_ms, 100.0 * mc_ms / total_ms);
-    std::fprintf(stderr, "      * MC Luma         %8.2f ms       %5.1f %%\n", mc_luma_ms, 100.0 * mc_luma_ms / total_ms);
-    std::fprintf(stderr, "      * MC Chroma       %8.2f ms       %5.1f %%\n", mc_chroma_ms, 100.0 * mc_chroma_ms / total_ms);
-    std::fprintf(stderr, "      * MC Copy/Pred    %8.2f ms       %5.1f %%\n", mc_pred_ms, 100.0 * mc_pred_ms / total_ms);
     std::fprintf(stderr, "    - Transforms (sub)  %8.2f ms       %5.1f %%\n", tr_ms, 100.0 * tr_ms / total_ms);
+    std::fprintf(stderr, "    - Intra Pred (sub)  %8.2f ms       %5.1f %%\n", intra_ms, 100.0 * intra_ms / total_ms);
+    std::fprintf(stderr, "    - MV Deriv/Other    %8.2f ms       %5.1f %%\n", (mb_ms - mc_ms - tr_ms - intra_ms), 100.0 * (mb_ms - mc_ms - tr_ms - intra_ms) / total_ms);
     std::fprintf(stderr, "  Deblocking Filter     %8.2f ms       %5.1f %%\n", db_ms, 100.0 * db_ms / total_ms);
     std::fprintf(stderr, "    - Strength Calc     %8.2f ms       %5.1f %%\n", db_str_ms, 100.0 * db_str_ms / total_ms);
     std::fprintf(stderr, "    - Edge Filtering    %8.2f ms       %5.1f %%\n", db_flt_ms, 100.0 * db_flt_ms / total_ms);

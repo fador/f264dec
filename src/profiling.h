@@ -13,6 +13,8 @@ struct F264ProfileStats {
     std::atomic<uint64_t> mc_chroma_ns{0};
     std::atomic<uint64_t> mc_pred_ns{0};
     std::atomic<uint64_t> transform_ns{0};
+    std::atomic<uint64_t> intra_ns{0};
+    std::atomic<uint64_t> mv_pred_ns{0};
     std::atomic<uint64_t> deblock_ns{0};
     std::atomic<uint64_t> db_strength_ns{0};
     std::atomic<uint64_t> db_filter_ns{0};
@@ -20,13 +22,14 @@ struct F264ProfileStats {
     std::atomic<uint64_t> decode_mb_ns{0};
     std::atomic<uint64_t> pad_ns{0};
     std::atomic<uint64_t> total_ns{0};
-
     void reset() {
         mc_ns = 0;
         mc_luma_ns = 0;
         mc_chroma_ns = 0;
         mc_pred_ns = 0;
         transform_ns = 0;
+        intra_ns = 0;
+        mv_pred_ns = 0;
         deblock_ns = 0;
         db_strength_ns = 0;
         db_filter_ns = 0;
