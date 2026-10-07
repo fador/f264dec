@@ -674,17 +674,22 @@ void unmark_for_reference(FrameStore* fs)
 
   fs->is_reference = 0;
 
-  if(fs->frame)
+  // The frame pipeline can still be decoding these pictures (the master runs
+  // ahead of the workers, and an SPS re-activation flushes the DPB before the
+  // in-flight jobs are waited for). Freeing the syntax-element scratch buffer
+  // under a worker crashes it, so only do that when the store is the sole
+  // owner; otherwise the buffer goes when the last owner releases the picture.
+  if (fs->frame && f264_pic_refcount(fs->frame) <= 1)
   {
     free_pic_motion(&fs->frame->motion);
   }
 
-  if (fs->top_field)
+  if (fs->top_field && f264_pic_refcount(fs->top_field) <= 1)
   {
     free_pic_motion(&fs->top_field->motion);
   }
 
-  if (fs->bottom_field)
+  if (fs->bottom_field && f264_pic_refcount(fs->bottom_field) <= 1)
   {
     free_pic_motion(&fs->bottom_field->motion);
   }

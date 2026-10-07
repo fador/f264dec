@@ -154,6 +154,14 @@ inline int f264_pic_unref(StorablePicture *p) {
   return std::atomic_ref<int>(p->ref_count).fetch_sub(1, std::memory_order_acq_rel);
 }
 
+// Number of owners holding the picture. The frame store itself holds one, so a
+// value above one means a frame pipeline job or dependency is still using it.
+inline int f264_pic_refcount(const StorablePicture *p) {
+  if (!p) return 0;
+  return std::atomic_ref<int>(const_cast<StorablePicture*>(p)->ref_count)
+      .load(std::memory_order_acquire);
+}
+
 //! Frame Stores for Decoded Picture Buffer
 typedef struct frame_store
 {
